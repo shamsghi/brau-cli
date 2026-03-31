@@ -527,6 +527,7 @@ mod tests {
     fn exact_alias_beats_other_matches() {
         let catalog = Catalog {
             generated_at: 0,
+            brew_state: None,
             items: vec![
                 package(
                     PackageKind::Formula,
@@ -562,6 +563,7 @@ mod tests {
     fn typo_matching_finds_the_right_formula() {
         let catalog = Catalog {
             generated_at: 0,
+            brew_state: None,
             items: vec![
                 package(
                     PackageKind::Formula,
@@ -596,6 +598,7 @@ mod tests {
     fn display_names_help_casks_win() {
         let catalog = Catalog {
             generated_at: 0,
+            brew_state: None,
             items: vec![
                 package(
                     PackageKind::Cask,
@@ -630,6 +633,7 @@ mod tests {
     fn scope_filter_hides_other_package_types() {
         let catalog = Catalog {
             generated_at: 0,
+            brew_state: None,
             items: vec![
                 package(
                     PackageKind::Formula,

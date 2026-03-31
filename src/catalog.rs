@@ -1,5 +1,7 @@
 use std::env;
 use std::fs;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -87,7 +89,22 @@ impl Package {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
     pub generated_at: u64,
+    #[serde(default)]
+    pub brew_state: Option<BrewState>,
     pub items: Vec<Package>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrewState {
+    pub taps_root: Option<String>,
+    #[serde(default)]
+    pub repos: Vec<RepoFingerprint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoFingerprint {
+    pub path: String,
+    pub head: String,
 }
 
 impl Catalog {
@@ -121,6 +138,13 @@ pub enum CatalogLoadSource {
     Cache,
     Refreshed,
     StaleFallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheStatus {
+    Missing,
+    Fresh,
+    Stale,
 }
 
 #[derive(Debug)]
@@ -163,6 +187,39 @@ pub fn load_catalog(options: LoadOptions) -> Result<CatalogLoad, String> {
     }
 }
 
+pub fn cache_status() -> Result<CacheStatus, String> {
+    let path = cache_path()?;
+    let metadata = match fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CacheStatus::Missing)
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to read cache metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+
+    let modified = metadata.modified().map_err(|error| {
+        format!(
+            "Failed to inspect cache timestamp {}: {error}",
+            path.display()
+        )
+    })?;
+
+    let age = SystemTime::now()
+        .duration_since(modified)
+        .unwrap_or_default();
+
+    Ok(if age <= CACHE_MAX_AGE {
+        CacheStatus::Fresh
+    } else {
+        CacheStatus::Stale
+    })
+}
+
 fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
     let output = Command::new("brew")
         .args(["info", "--json=v2", "--eval-all"])
@@ -184,10 +241,10 @@ fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
     let mut items = Vec::with_capacity(response.formulae.len() + response.casks.len());
     items.extend(response.formulae.into_iter().map(Package::from));
     items.extend(response.casks.into_iter().map(Package::from));
-    items.sort_by(|left, right| left.token.cmp(&right.token));
 
     let catalog = Catalog {
         generated_at: now_unix_timestamp(),
+        brew_state: snapshot_brew_state().ok(),
         items,
     };
 
@@ -200,16 +257,16 @@ fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
         })?;
     }
 
-    let serialized = serde_json::to_vec(&catalog)
-        .map_err(|error| format!("Failed to serialize the package catalog: {error}"))?;
-
     let temp_path = cache_path.with_extension("tmp");
-    fs::write(&temp_path, serialized).map_err(|error| {
+    let file = File::create(&temp_path).map_err(|error| {
         format!(
-            "Failed to write cache file {}: {error}",
+            "Failed to create cache file {}: {error}",
             temp_path.display()
         )
     })?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer(writer, &catalog)
+        .map_err(|error| format!("Failed to serialize the package catalog: {error}"))?;
     fs::rename(&temp_path, cache_path).map_err(|error| {
         format!(
             "Failed to move cache file into place ({} -> {}): {error}",
@@ -248,7 +305,18 @@ fn read_cache_if_fresh(path: &Path) -> Result<Option<Catalog>, String> {
         return Ok(None);
     }
 
-    read_cache_any(path)
+    let Some(catalog) = read_cache_any(path)? else {
+        return Ok(None);
+    };
+
+    match catalog.brew_state.as_ref() {
+        Some(state) => match brew_state_is_current(state) {
+            Ok(true) => Ok(Some(catalog)),
+            Ok(false) => Ok(None),
+            Err(_) => Ok(Some(catalog)),
+        },
+        None => Ok(None),
+    }
 }
 
 fn read_cache_any(path: &Path) -> Result<Option<Catalog>, String> {
@@ -265,6 +333,10 @@ fn read_cache_any(path: &Path) -> Result<Option<Catalog>, String> {
 }
 
 fn cache_path() -> Result<PathBuf, String> {
+    Ok(cache_dir()?.join(CACHE_FILE_NAME))
+}
+
+pub fn cache_dir() -> Result<PathBuf, String> {
     let base_dir = if let Ok(path) = env::var("XDG_CACHE_HOME") {
         PathBuf::from(path)
     } else if cfg!(target_os = "macos") {
@@ -273,7 +345,7 @@ fn cache_path() -> Result<PathBuf, String> {
         home_dir()?.join(".cache")
     };
 
-    Ok(base_dir.join("brewfind").join(CACHE_FILE_NAME))
+    Ok(base_dir.join("brau"))
 }
 
 fn home_dir() -> Result<PathBuf, String> {
@@ -287,6 +359,210 @@ fn now_unix_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn snapshot_brew_state() -> Result<BrewState, String> {
+    let root_repo = brew_repository_root()?;
+    let taps_root = root_repo.join("Library").join("Taps");
+
+    let mut repos = vec![fingerprint_repo(&root_repo)?];
+    for repo in scan_tap_repos(&taps_root)? {
+        repos.push(fingerprint_repo(&repo)?);
+    }
+    repos.sort_by(|left, right| left.path.cmp(&right.path));
+
+    Ok(BrewState {
+        taps_root: taps_root
+            .exists()
+            .then(|| taps_root.to_string_lossy().into_owned()),
+        repos,
+    })
+}
+
+fn brew_state_is_current(state: &BrewState) -> Result<bool, String> {
+    if let Some(taps_root) = state.taps_root.as_deref() {
+        let taps_root_path = Path::new(taps_root);
+        let mut current_tap_paths = scan_tap_repos(taps_root_path)?
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        current_tap_paths.sort();
+
+        let mut saved_tap_paths = state
+            .repos
+            .iter()
+            .filter(|repo| repo.path.starts_with(taps_root))
+            .map(|repo| repo.path.clone())
+            .collect::<Vec<_>>();
+        saved_tap_paths.sort();
+
+        if current_tap_paths != saved_tap_paths {
+            return Ok(false);
+        }
+    }
+
+    for repo in &state.repos {
+        let path = Path::new(&repo.path);
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        if read_repo_head_signature(path)? != repo.head {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn brew_repository_root() -> Result<PathBuf, String> {
+    let output = Command::new("brew")
+        .arg("--repository")
+        .output()
+        .map_err(|error| format!("Failed to ask Homebrew for its repository path: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Homebrew failed while reporting its repository path with status {}.",
+            output.status
+        ));
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        Err("Homebrew returned an empty repository path.".to_string())
+    } else {
+        Ok(PathBuf::from(path))
+    }
+}
+
+fn scan_tap_repos(taps_root: &Path) -> Result<Vec<PathBuf>, String> {
+    if !taps_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut repos = Vec::new();
+    for owner in fs::read_dir(taps_root).map_err(|error| {
+        format!(
+            "Failed to read taps directory {}: {error}",
+            taps_root.display()
+        )
+    })? {
+        let owner = owner.map_err(|error| {
+            format!(
+                "Failed to read an entry in taps directory {}: {error}",
+                taps_root.display()
+            )
+        })?;
+        let owner_path = owner.path();
+        if !owner_path.is_dir() {
+            continue;
+        }
+
+        for repo in fs::read_dir(&owner_path).map_err(|error| {
+            format!(
+                "Failed to read tap owner directory {}: {error}",
+                owner_path.display()
+            )
+        })? {
+            let repo = repo.map_err(|error| {
+                format!(
+                    "Failed to read an entry in {}: {error}",
+                    owner_path.display()
+                )
+            })?;
+            let repo_path = repo.path();
+            if repo_path.is_dir() {
+                repos.push(repo_path);
+            }
+        }
+    }
+
+    repos.sort();
+    Ok(repos)
+}
+
+fn fingerprint_repo(repo_path: &Path) -> Result<RepoFingerprint, String> {
+    Ok(RepoFingerprint {
+        path: repo_path.to_string_lossy().into_owned(),
+        head: read_repo_head_signature(repo_path)?,
+    })
+}
+
+fn read_repo_head_signature(repo_path: &Path) -> Result<String, String> {
+    let git_dir = resolve_git_dir(repo_path)?;
+    let head_path = git_dir.join("HEAD");
+    let head_contents = fs::read_to_string(&head_path)
+        .map_err(|error| format!("Failed to read git HEAD {}: {error}", head_path.display()))?;
+    let head = head_contents.trim();
+
+    if let Some(reference) = head.strip_prefix("ref: ").map(str::trim) {
+        if let Some(hash) = resolve_ref_hash(&git_dir, reference)? {
+            return Ok(format!("{reference}@{hash}"));
+        }
+        return Ok(reference.to_string());
+    }
+
+    Ok(head.to_string())
+}
+
+fn resolve_git_dir(repo_path: &Path) -> Result<PathBuf, String> {
+    let dot_git = repo_path.join(".git");
+    let metadata = fs::metadata(&dot_git)
+        .map_err(|error| format!("Failed to inspect {}: {error}", dot_git.display()))?;
+
+    if metadata.is_dir() {
+        return Ok(dot_git);
+    }
+
+    let contents = fs::read_to_string(&dot_git)
+        .map_err(|error| format!("Failed to read {}: {error}", dot_git.display()))?;
+    let gitdir = contents
+        .trim()
+        .strip_prefix("gitdir:")
+        .map(str::trim)
+        .ok_or_else(|| format!("Unrecognized gitdir format in {}.", dot_git.display()))?;
+
+    let path = PathBuf::from(gitdir);
+    Ok(if path.is_absolute() {
+        path
+    } else {
+        repo_path.join(path)
+    })
+}
+
+fn resolve_ref_hash(git_dir: &Path, reference: &str) -> Result<Option<String>, String> {
+    let ref_path = git_dir.join(reference);
+    if let Ok(contents) = fs::read_to_string(&ref_path) {
+        return Ok(Some(contents.trim().to_string()));
+    }
+
+    let packed_refs = git_dir.join("packed-refs");
+    let contents = match fs::read_to_string(&packed_refs) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read packed refs {}: {error}",
+                packed_refs.display()
+            ))
+        }
+    };
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('^') {
+            continue;
+        }
+
+        if let Some((hash, ref_name)) = trimmed.split_once(' ') {
+            if ref_name == reference {
+                return Ok(Some(hash.to_string()));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(Debug, Deserialize)]
