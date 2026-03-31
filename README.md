@@ -1,115 +1,107 @@
-# brau
+# 🍻 brau
 
-`brau` is a fuzzy Homebrew search CLI written in Rust. It builds a local
-cache of formula and cask metadata, guesses the package you probably meant, shows
-more package context than `brew search`, and can install the chosen result
-directly from inside the CLI. It can also act as a cozy wrapper for regular
-Homebrew commands.
+**The Homebrew companion that actually installs what you meant.**
 
-`search` is the default command, so `brau ripgrap` and
-`brau search ripgrap` do the same thing. Bare Homebrew verbs like
-`brau update` or `brau cleanup --prune=all` pass straight through to
-`brew` with the same formatting and motion touches.
+Tired of memorizing exact package names or getting errors for simple typos?
 
-## What it does
+`brau` is a cozy wrapper around Homebrew that guesses what you *actually* meant. It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
 
-- Fuzzy-searches both formulae and casks
-- Handles typos, aliases, display names, and partial queries
-- Shows descriptions, versions, taps, aliases, homepages, and dependencies
-- Installs the best match directly with `brau install <query>`
-- Uninstalls packages directly with `brau uninstall <query>`
-- Passes regular Homebrew commands through with extra formatting and animation
-- Caches Homebrew metadata locally to keep later searches fast
+*(And yes, it is written in Rust. Because for obvious reasons, all new CLI tools must be blazingly fast™ and written in Rust.)*
 
-## Examples
+## 📋 Prerequisites
+
+Before installing `brau`, make sure you have:
+
+- **macOS** (Homebrew is macOS-only)
+- **Homebrew** — if you don't have it yet, install it with:
 
 ```bash
-brau ripgrap
-brau vscode --cask
-brau info docker desktop
-brau install rg
-brau uninstall ripgrep --yes
-brau update
-brau cleanup --prune=all
-brau brew --version
-brau install google chrome --cask
-brau install ripgrep --no-finale
-brau refresh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-## Commands
+## 🚀 Quick Install
 
-```text
-brau [OPTIONS] <query...>
-brau search [OPTIONS] <query...>
-brau info [OPTIONS] <query...>
-brau install [OPTIONS] <query...>
-brau uninstall [OPTIONS] <query...>
-brau brew <brew-command...>
-brau refresh
-```
-
-Useful flags:
-
-- `--formula` searches only formulae
-- `--cask` searches only casks
-- `--refresh` rebuilds the local metadata cache first
-- `--no-anim` disables the motion touches
-- `--no-finale` disables the post-install ASCII finale
-- `-n, --limit <count>` changes the number of search results
-- `-y, --yes` skips the install or uninstall confirmation prompt
-- `--dry-run` prints the brew command without running it
-
-For direct Homebrew passthrough, you can either:
-
-- run a bare brew command like `brau update`
-- use explicit passthrough like `brau brew services list`
-- use `brau brew --version` for brew's global flag-style commands
-
-## How it works
-
-On the first run, or whenever the cache is stale, `brau` refreshes its index
-with:
+You can install `brau` directly via Homebrew using our custom tap! Just run:
 
 ```bash
-brew info --json=v2 --eval-all
-```
+# Tap the repository (tells Homebrew where to find it)
+brew tap shamsghi/brau-cli https://github.com/shamsghi/brau-cli
 
-That metadata is stored locally under the normal cache directory:
-
-- macOS: `~/Library/Caches/brau/catalog-v1.json`
-- Linux: `$XDG_CACHE_HOME/brau/catalog-v1.json` or `~/.cache/brau/catalog-v1.json`
-
-The first refresh can take a little while because it indexes the full Homebrew
-catalog. Later searches read from the cache.
-
-## Local development
-
-```bash
-cargo fmt
-cargo test
-cargo run -- ripgrap
-cargo run -- install rg --dry-run
-cargo run -- uninstall ripgrep --yes --dry-run
-cargo run -- update
-cargo run -- brew --version
-```
-
-## Homebrew tap
-
-This repository includes a tap formula at `Formula/brau.rb`, so the repo can
-act as its own tap once it is published to GitHub.
-
-Assuming the repo lives at `https://github.com/pancake/brau`, users can install it with:
-
-```bash
-brew tap pancake/brau https://github.com/pancake/brau
+# Install the magic
 brew install brau
 ```
 
-Right now the included formula tracks the `main` branch so the tap works before
-you cut a tagged release. Once you publish stable release tags, update the
-formula to point at a versioned tag or archive URL for better reproducibility.
+## 🎉 Why `brau`?
 
-If you publish under a different GitHub owner or repo slug, update the tap
-command plus the `homepage`, `url`, and `head` entries in `Formula/brau.rb`.
+- **🧠 It reads your mind:** Fuzzy-searches both formulae and casks. Looking for `postgress` but the package is actually `postgresql@14`? No problem!
+- **⚡ Blazing fast:** Builds a local cache of Homebrew so you never have to wait for a slow `brew search` again.
+- **🎬 Dramatic flair:** Adds fun animations and ASCII finales to your everyday installs.
+- **🛠️ One CLI to rule them all:** Pass your regular Homebrew commands (`brau update`, `brau cleanup`) straight through!
+
+## 🪄 Magic Tricks (Usage)
+
+You can use `brau` exactly like you'd use `brew`. It just works better.
+
+**Find things (even if you can't spell them):**
+```bash
+brau postgress           # Wait, did you mean postgresql? Yes, we did.
+brau vscode --cask       # Search specifically for casks
+```
+
+**Install & Uninstall with ease:**
+```bash
+brau install pg          # Finds the best match and installs it!
+brau uninstall postgresql # Say goodbye
+```
+
+**Do regular Homebrew stuff:**
+```bash
+brau update              # Passes straight to brew
+brau cleanup --prune=all
+```
+
+## ⚙️ How It Works
+
+When you run `brau`, here's what happens under the hood:
+
+1. **Local cache** — On first run, `brau` calls `brew info --json=v2 --all` to snapshot every formula and cask into a local cache (`~/.cache/brau/`). This takes a few seconds once, then never again.
+2. **Smart invalidation** — Instead of using a dumb timer, `brau` fingerprints the `HEAD` commit of each of your Homebrew tap repos. If nothing changed in your taps, the cache is reused instantly.
+3. **Multi-factor fuzzy search** — Your query is scored against every package using a combination of:
+   - Exact / prefix / contains matching on names, aliases, and old names
+   - Word-overlap scoring
+   - Subsequence scoring
+   - Bounded Levenshtein distance (typo correction)
+   - Acronym matching (e.g. `pg` → `postgresql`)
+4. **Ranked results** — Matches are ranked by score, with installed packages getting a small boost and a length penalty discouraging overly generic matches.
+5. **You confirm, brew executes** — `brau` picks the best match, asks you to confirm (unless `-y` is passed), then hands off the final command straight to `brew`.
+
+## ⚔️ `brew` vs `brau`
+
+| Scenario | `brew` | `brau` |
+|---|---|---|
+| Typo in package name | ❌ Error | ✅ Figures it out |
+| Searching packages | 🐢 Queries network | ⚡ Hits local cache |
+| Finding casks | Separate `--cask` flag required | Searches both automatically |
+| Acronym search (`pg`, `vsc`) | ❌ No results | ✅ Matches `postgresql`, `visual-studio-code` |
+| Old / renamed packages | ❌ Not found | ✅ Matched via old names & aliases |
+| Regular brew commands | ✅ Native | ✅ Passed straight through |
+| Fun animations | 😐 | 🎉 |
+
+## 🎛️ Cool Flags
+
+Need to tweak things? Try these out:
+
+- `--formula` or `--cask` — Narrow down your searches.
+- `-y, --yes` — Skip the install/uninstall confirmation prompts.
+- `--no-anim` & `--no-finale` — Turn off the fun animations 😢.
+- `--refresh` — Rebuild your local cache to get the absolute freshest packages.
+
+## 💻 For Developers
+
+Want to tinker with the code under the hood and fight the borrow checker? 🦀
+
+```bash
+cargo build
+cargo test
+cargo run -- postgress
+```
