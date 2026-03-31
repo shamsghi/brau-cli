@@ -53,110 +53,113 @@ pub fn search_catalog<'a>(
 }
 
 fn score_package<'a>(package: &'a Package, query: &PreparedQuery) -> Option<SearchMatch<'a>> {
-    let mut best_score = None;
-    let mut best_strength = MatchStrength::Fuzzy;
-    let mut best_reason = "fuzzy match";
-
-    for field in build_fields(package) {
-        if let Some(candidate) = score_field(query, &field) {
-            match best_score {
-                Some(existing) if existing >= candidate.score => {}
-                _ => {
-                    best_score = Some(candidate.score);
-                    best_strength = candidate.strength;
-                    best_reason = candidate.reason;
-                }
-            }
-        }
-    }
-
-    let mut score = best_score?;
-
-    if package.installed {
-        score += 25;
-    }
-    if package.outdated {
-        score += 10;
-    }
-    if package.deprecated {
-        score -= 120;
-    }
-    if package.disabled {
-        score -= 180;
-    }
+    let best = build_fields(package)
+        .into_iter()
+        .filter_map(|field| score_field(query, &field))
+        .fold(None, pick_best)?;
 
     Some(SearchMatch {
         package,
-        score,
-        strength: best_strength,
-        reason: best_reason,
+        score: apply_package_biases(best.score, package),
+        strength: best.strength,
+        reason: best.reason,
     })
 }
 
 fn build_fields(package: &Package) -> Vec<SearchField> {
-    let mut fields = Vec::new();
+    let mut fields = Vec::with_capacity(
+        3 + package.aliases.len() + package.display_names.len() + package.old_names.len(),
+    );
 
-    fields.push(SearchField::name(
+    push_name_field(
+        &mut fields,
         &package.token,
         220,
         "exact package name",
         "package name prefix",
         "package name",
-    ));
+    );
 
     if !package.full_token.is_empty() && package.full_token != package.token {
-        fields.push(SearchField::name(
+        push_name_field(
+            &mut fields,
             &package.full_token,
             200,
             "exact full package name",
             "full package name prefix",
             "full package name",
-        ));
+        );
     }
 
-    for alias in &package.aliases {
-        fields.push(SearchField::name(
-            alias,
-            190,
-            "alias",
-            "alias prefix",
-            "alias",
-        ));
-    }
-
-    for name in &package.display_names {
-        fields.push(SearchField::name(
-            name,
-            185,
-            "display name",
-            "display name prefix",
-            "display name",
-        ));
-    }
-
-    for old_name in &package.old_names {
-        fields.push(SearchField::name(
-            old_name,
-            140,
-            "legacy name",
-            "legacy name prefix",
-            "legacy name",
-        ));
-    }
+    extend_name_fields(
+        &mut fields,
+        &package.aliases,
+        190,
+        "alias",
+        "alias prefix",
+        "alias",
+    );
+    extend_name_fields(
+        &mut fields,
+        &package.display_names,
+        185,
+        "display name",
+        "display name prefix",
+        "display name",
+    );
+    extend_name_fields(
+        &mut fields,
+        &package.old_names,
+        140,
+        "legacy name",
+        "legacy name prefix",
+        "legacy name",
+    );
 
     fields.push(SearchField::description(&package.desc, 70));
 
     if let Some(homepage) = package.homepage.as_deref() {
-        fields.push(SearchField::name(
+        push_name_field(
+            &mut fields,
             homepage,
             40,
             "homepage",
             "homepage prefix",
             "homepage",
-        ));
+        );
     }
 
     fields
+}
+
+fn push_name_field(
+    fields: &mut Vec<SearchField>,
+    raw: &str,
+    weight: i32,
+    exact_reason: &'static str,
+    prefix_reason: &'static str,
+    contains_reason: &'static str,
+) {
+    fields.push(SearchField::name(
+        raw,
+        weight,
+        exact_reason,
+        prefix_reason,
+        contains_reason,
+    ));
+}
+
+fn extend_name_fields(
+    fields: &mut Vec<SearchField>,
+    values: &[String],
+    weight: i32,
+    exact_reason: &'static str,
+    prefix_reason: &'static str,
+    contains_reason: &'static str,
+) {
+    fields.extend(values.iter().map(|value| {
+        SearchField::name(value, weight, exact_reason, prefix_reason, contains_reason)
+    }));
 }
 
 fn score_field(query: &PreparedQuery, field: &SearchField) -> Option<ScoredField> {
@@ -350,6 +353,23 @@ fn pick_best(current: Option<ScoredField>, candidate: ScoredField) -> Option<Sco
     }
 }
 
+fn apply_package_biases(mut score: i32, package: &Package) -> i32 {
+    if package.installed {
+        score += 25;
+    }
+    if package.outdated {
+        score += 10;
+    }
+    if package.deprecated {
+        score -= 120;
+    }
+    if package.disabled {
+        score -= 180;
+    }
+
+    score
+}
+
 fn compare_kind(left: PackageKind, right: PackageKind) -> std::cmp::Ordering {
     match (left, right) {
         (PackageKind::Formula, PackageKind::Cask) => std::cmp::Ordering::Less,
@@ -375,12 +395,13 @@ struct SearchField {
 }
 
 impl SearchField {
-    fn name(
+    fn new(
         raw: &str,
         weight: i32,
         exact_reason: &'static str,
         prefix_reason: &'static str,
         contains_reason: &'static str,
+        allow_edit_distance: bool,
     ) -> Self {
         let words = split_words(raw);
         let normalized = normalize(raw);
@@ -394,25 +415,36 @@ impl SearchField {
             exact_reason,
             prefix_reason,
             contains_reason,
-            allow_edit_distance: true,
+            allow_edit_distance,
         }
     }
 
-    fn description(raw: &str, weight: i32) -> Self {
-        let words = split_words(raw);
-        let normalized = normalize(raw);
-        let acronym = build_acronym(&words);
-
-        Self {
-            normalized,
-            words,
-            acronym,
+    fn name(
+        raw: &str,
+        weight: i32,
+        exact_reason: &'static str,
+        prefix_reason: &'static str,
+        contains_reason: &'static str,
+    ) -> Self {
+        Self::new(
+            raw,
             weight,
-            exact_reason: "exact description match",
-            prefix_reason: "description prefix",
-            contains_reason: "description",
-            allow_edit_distance: false,
-        }
+            exact_reason,
+            prefix_reason,
+            contains_reason,
+            true,
+        )
+    }
+
+    fn description(raw: &str, weight: i32) -> Self {
+        Self::new(
+            raw,
+            weight,
+            "exact description match",
+            "description prefix",
+            "description",
+            false,
+        )
     }
 
     fn edit_distance(&self, query: &PreparedQuery) -> Option<usize> {
@@ -430,7 +462,7 @@ impl SearchField {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct ScoredField {
     score: i32,
     strength: MatchStrength,
@@ -663,5 +695,43 @@ mod tests {
 
         assert_eq!(results[0].package.kind, PackageKind::Cask);
         assert_eq!(results[0].package.token, "docker-desktop");
+    }
+
+    #[test]
+    fn installed_packages_get_a_small_ranking_boost() {
+        let mut omega = package(
+            PackageKind::Formula,
+            "omega",
+            &[],
+            &[],
+            "Fast downloader for releases",
+        );
+        omega.installed = true;
+
+        let catalog = Catalog {
+            generated_at: 0,
+            brew_state: None,
+            items: vec![
+                package(
+                    PackageKind::Formula,
+                    "alpha",
+                    &[],
+                    &[],
+                    "Fast downloader for releases",
+                ),
+                omega,
+            ],
+        };
+
+        let results = search_catalog(
+            &catalog,
+            "fast downloader",
+            SearchOptions {
+                scope: QueryScope::All,
+                limit: 3,
+            },
+        );
+
+        assert_eq!(results[0].package.token, "omega");
     }
 }
