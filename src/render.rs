@@ -148,8 +148,10 @@ pub fn draw_catalog_warmup_tick(
     let step_index = tick % spec.steps.len();
     let footer = format!("{} elapsed · {}", format_elapsed(elapsed), spec.footer_hint);
 
-    if tick > 0 {
-        print!("\x1b[4A");
+    if tick == 0 {
+        print!("\x1b7"); // save cursor position before first draw
+    } else {
+        print!("\x1b8\x1b[0J"); // restore saved cursor, clear everything below
     }
 
     let lines = [
