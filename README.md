@@ -34,7 +34,7 @@ brew install brau --HEAD
 
 ## 🎉 Why `brau`?
 
-- **🧠 It reads your mind:** Fuzzy-searches both formulae and casks. Looking for `postgress` but the package is actually `postgresql@14`? No problem!
+- **🧠 It reads your mind:** Fuzzy-searches both formulae and casks. Looking for `postgres` but the package is actually `postgresql@14`? No problem!
 - **⚡ Blazing fast:** Builds a local cache of Homebrew so you never have to wait for a slow `brew search` again.
 - **🎬 Dramatic flair:** Adds fun animations and ASCII finales to your everyday installs.
 - **🛠️ One CLI to rule them all:** Pass your regular Homebrew commands (`brau update`, `brau cleanup`) straight through!
@@ -45,7 +45,7 @@ You can use `brau` exactly like you'd use `brew`. It just works better.
 
 **Find things:**
 ```bash
-brau postgress           # Wait, did you mean postgresql? Yes, we did.
+brau postgres            # Wait, did you mean postgresql? Yes, we did.
 brau vscode --cask       # Search specifically for casks
 ```
 
@@ -99,5 +99,5 @@ Want to tinker with the code under the hood and fight the borrow checker? 🦀
 ```bash
 cargo build
 cargo test
-cargo run -- postgress
+cargo run -- postgres
 ```
