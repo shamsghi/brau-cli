@@ -1,10 +1,7 @@
 class Brau < Formula
   desc "Fuzzy Homebrew search and install CLI for formulae and casks"
-  homepage "https://github.com/pancake/brau"
-  url "https://github.com/pancake/brau.git",
-      branch: "main"
-  version "main"
-  head "https://github.com/pancake/brau.git", branch: "main"
+  homepage "https://github.com/shamsghi/brau-cli"
+  head "https://github.com/shamsghi/brau-cli.git", branch: "main"
 
   depends_on "rust" => :build
 

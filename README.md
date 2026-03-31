@@ -27,8 +27,8 @@ You can install `brau` directly via Homebrew using our custom tap! Just run:
 # Tap the repository (tells Homebrew where to find it)
 brew tap shamsghi/brau-cli https://github.com/shamsghi/brau-cli
 
-# Install the magic
-brew install brau
+# Install the magic (HEAD-only formula, no release tags yet)
+brew install brau --HEAD
 ```
 
 ## 🎉 Why `brau`?
