@@ -80,6 +80,10 @@ const CATALOG_REFRESH_STEPS: [&str; 4] = [
     "refreshing cask notes",
     "rewriting the local catalog",
 ];
+const CATALOG_WARMUP_MAX_WIDTH: usize = 68;
+const CATALOG_WARMUP_MIN_WIDTH: usize = 52;
+const HONEY_HUES: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;228"];
+const TEAL_HUES: [&str; 2] = ["38;5;73", "38;5;109"];
 
 #[derive(Clone, Copy)]
 struct FinaleFrame {
@@ -745,7 +749,7 @@ fn catalog_warmup_spec(kind: CatalogWarmupKind) -> CatalogWarmupSpec {
             title: "Building local Homebrew catalog",
             subtitle:
                 "First run is slower because brau asks Homebrew for every formula and cask once, then keeps a local cache for later.",
-            footer_hint: "later runs read the local cache instead",
+            footer_hint: "later runs use the local cache",
             steps: &CATALOG_BUILD_STEPS,
         },
         CatalogWarmupKind::StaleRefresh => CatalogWarmupSpec {
@@ -956,6 +960,15 @@ impl Style {
     }
 
     fn frame_title_for(&self, label: &str, icon: &str, title: &str) -> String {
+        if label == "catalog-build" {
+            let content = if self.fancy {
+                format!("{icon} {title}")
+            } else {
+                title.to_string()
+            };
+            return self.catalog_frame_line(&content, "1;38;5;223", '=', 3);
+        }
+
         let prefix = if self.fancy {
             format!("{icon} ")
         } else {
@@ -990,6 +1003,10 @@ impl Style {
     }
 
     fn frame_footer_for(&self, label: &str, message: &str) -> String {
+        if label == "catalog-build" {
+            return self.catalog_frame_line(message, "38;5;150", '-', 17);
+        }
+
         let bar = "-".repeat(10);
         let palette = self.palette(label);
         self.compose_colored_line(
@@ -1031,6 +1048,10 @@ impl Style {
     }
 
     fn catalog_pour_line(&self, label: &str, step: &str, tick: usize) -> String {
+        if label == "catalog-build" {
+            return self.catalog_pour_track(step, tick);
+        }
+
         let palette = self.palette(label);
         let fill = (tick % 8) + 1;
         let stream = match tick % 4 {
@@ -1402,5 +1423,178 @@ impl Style {
         } else {
             value.to_string()
         }
+    }
+
+    fn catalog_frame_line(
+        &self,
+        content: &str,
+        content_code: &str,
+        fill_char: char,
+        seed: usize,
+    ) -> String {
+        let width = self.catalog_card_width();
+        let inner_width = width.saturating_sub(2);
+        let content = self.truncate_plain(content, inner_width.saturating_sub(2));
+        let content_width = self.visible_width(&content) + 2;
+        let fill_total = inner_width.saturating_sub(content_width);
+        let left_fill = fill_total / 2;
+        let right_fill = fill_total.saturating_sub(left_fill);
+        let left = format!("+{}", fill_char.to_string().repeat(left_fill));
+        let right = format!("{}+", fill_char.to_string().repeat(right_fill));
+
+        format!(
+            "{}{}{}",
+            self.catalog_sunwash(&left, seed),
+            self.paint(content_code, &format!(" {content} ")),
+            self.catalog_sunwash(&right, seed + 7)
+        )
+    }
+
+    fn catalog_pour_track(&self, step: &str, tick: usize) -> String {
+        let fill = (tick % 8) + 1;
+        let stream = match tick % 4 {
+            0 => ".",
+            1 => ".:",
+            2 => ".::",
+            _ => ".:::",
+        };
+        let bubble = match tick % 4 {
+            0 => "°",
+            1 => "o",
+            2 => "°",
+            _ => ".",
+        };
+        let prefix = format!("tap ))> {stream} {bubble}");
+        let mug = self.catalog_mug(fill, tick);
+        let lead_plain = format!("{prefix}  [00000000] ");
+        let icon_plain = "🍺 ";
+        let separator_plain = "· ";
+        let min_trail = 4usize;
+        let total_reserved = self.visible_width(&lead_plain)
+            + self.visible_width(icon_plain)
+            + self.visible_width(separator_plain)
+            + min_trail;
+        let width = self.catalog_card_width();
+        let step_width = width.saturating_sub(total_reserved);
+        let step = self.truncate_plain(step, step_width);
+        let used = self.visible_width(&prefix)
+            + 2
+            + 10
+            + self.visible_width(icon_plain)
+            + self.visible_width(separator_plain)
+            + self.visible_width(&step)
+            + 1;
+        let trail_len = width.saturating_sub(used).max(min_trail);
+        let trail = self.catalog_stream_tail(tick, trail_len);
+
+        format!(
+            "{}  {}{}{}{}",
+            self.catalog_sunwash(&prefix, tick + 1),
+            mug,
+            self.paint("1;38;5;223", "🍺 "),
+            self.paint("38;5;109", "· "),
+            self.catalog_step_and_tail(&step, &trail, tick)
+        )
+    }
+
+    fn catalog_step_and_tail(&self, step: &str, tail: &str, tick: usize) -> String {
+        format!(
+            "{} {}",
+            self.paint("1;38;5;223", step),
+            self.catalog_sunwash(tail, tick + 11)
+        )
+    }
+
+    fn catalog_mug(&self, fill: usize, tick: usize) -> String {
+        if !self.enabled {
+            return format!(
+                "[{}{}]",
+                "▓".repeat(fill),
+                "░".repeat(8usize.saturating_sub(fill))
+            );
+        }
+
+        let mut out = String::new();
+        out.push_str(&self.paint(TEAL_HUES[tick % TEAL_HUES.len()], "["));
+        for index in 0..fill {
+            out.push_str(&self.paint(HONEY_HUES[(tick + index) % HONEY_HUES.len()], "▓"));
+        }
+        for index in fill..8 {
+            out.push_str(&self.paint(TEAL_HUES[(tick + index) % TEAL_HUES.len()], "░"));
+        }
+        out.push_str(&self.paint(TEAL_HUES[(tick + 1) % TEAL_HUES.len()], "]"));
+        out.push(' ');
+        out
+    }
+
+    fn catalog_stream_tail(&self, tick: usize, len: usize) -> String {
+        let pattern = ['-', '~', '=', ':'];
+        (0..len)
+            .map(|index| pattern[(tick + index) % pattern.len()])
+            .collect()
+    }
+
+    fn catalog_sunwash(&self, value: &str, seed: usize) -> String {
+        if !self.enabled {
+            return value.to_string();
+        }
+
+        let mut out = String::new();
+        for (index, ch) in value.chars().enumerate() {
+            if ch.is_whitespace() {
+                out.push(ch);
+                continue;
+            }
+
+            let palette = if (index + seed) % 6 == 0 {
+                TEAL_HUES[(index + seed) % TEAL_HUES.len()]
+            } else {
+                HONEY_HUES[(index + seed) % HONEY_HUES.len()]
+            };
+
+            out.push_str(&format!("\x1b[{palette}m{ch}\x1b[0m"));
+        }
+        out
+    }
+
+    fn catalog_card_width(&self) -> usize {
+        let columns = env::var("COLUMNS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok());
+        match columns {
+            Some(columns) => {
+                let available = columns.saturating_sub(4);
+                if available < CATALOG_WARMUP_MIN_WIDTH {
+                    available.max(36)
+                } else {
+                    available.min(CATALOG_WARMUP_MAX_WIDTH)
+                }
+            }
+            None => CATALOG_WARMUP_MAX_WIDTH,
+        }
+    }
+
+    fn truncate_plain(&self, value: &str, max_width: usize) -> String {
+        if self.visible_width(value) <= max_width {
+            return value.to_string();
+        }
+
+        if max_width <= 3 {
+            return ".".repeat(max_width);
+        }
+
+        let mut clipped = String::new();
+        for ch in value.chars() {
+            if self.visible_width(&clipped) + 1 > max_width.saturating_sub(3) {
+                break;
+            }
+            clipped.push(ch);
+        }
+        clipped.push_str("...");
+        clipped
+    }
+
+    fn visible_width(&self, value: &str) -> usize {
+        value.chars().count()
     }
 }
