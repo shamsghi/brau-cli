@@ -39,11 +39,11 @@ brew install brau --HEAD
 - **🎬 Dramatic flair:** Adds fun animations and ASCII finales to your everyday installs.
 - **🛠️ One CLI to rule them all:** Pass your regular Homebrew commands (`brau update`, `brau cleanup`) straight through!
 
-## 🪄 Magic Tricks (Usage)
+## 🪄 Usage
 
 You can use `brau` exactly like you'd use `brew`. It just works better.
 
-**Find things (even if you can't spell them):**
+**Find things:**
 ```bash
 brau postgress           # Wait, did you mean postgresql? Yes, we did.
 brau vscode --cask       # Search specifically for casks
@@ -60,21 +60,6 @@ brau uninstall postgresql # Say goodbye
 brau update              # Passes straight to brew
 brau cleanup --prune=all
 ```
-
-## ⚙️ How It Works
-
-When you run `brau`, here's what happens under the hood:
-
-1. **Local cache** — On first run, `brau` calls `brew info --json=v2 --all` to snapshot every formula and cask into a local cache (`~/.cache/brau/`). This takes a few seconds once, then never again.
-2. **Smart invalidation** — Instead of using a dumb timer, `brau` fingerprints the `HEAD` commit of each of your Homebrew tap repos. If nothing changed in your taps, the cache is reused instantly.
-3. **Multi-factor fuzzy search** — Your query is scored against every package using a combination of:
-   - Exact / prefix / contains matching on names, aliases, and old names
-   - Word-overlap scoring
-   - Subsequence scoring
-   - Bounded Levenshtein distance (typo correction)
-   - Acronym matching (e.g. `pg` → `postgresql`)
-4. **Ranked results** — Matches are ranked by score, with installed packages getting a small boost and a length penalty discouraging overly generic matches.
-5. **You confirm, brew executes** — `brau` picks the best match, asks you to confirm (unless `-y` is passed), then hands off the final command straight to `brew`.
 
 ## ⚔️ `brew` vs `brau`
 
@@ -98,6 +83,16 @@ Need to tweak things? Try these out:
 - `--refresh` — Rebuild your local cache to get the absolute freshest packages.
 
 ## 💻 For Developers
+
+### How It Works
+
+When you run `brau`, here's what happens under the hood:
+
+1. **Builds a local catalog once** — On first run, `brau` asks Homebrew for all formulae and casks, then saves them in a local cache.
+2. **Refreshes only when needed** — It checks your tap repos for changes and reuses the cache if nothing changed.
+3. **Finds what you meant** — It uses fuzzy matching (typos, aliases, acronyms, partial names) to pick the best package.
+4. **Ranks the best options** — Results are scored so the most likely match appears first.
+5. **Runs brew for real** — After confirmation (or `-y`), `brau` executes the actual `brew` command.
 
 Want to tinker with the code under the hood and fight the borrow checker? 🦀
 
