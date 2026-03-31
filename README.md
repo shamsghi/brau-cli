@@ -6,7 +6,7 @@ Tired of memorizing exact package names or getting errors for simple typos?
 
 `brau` is a cozy wrapper around Homebrew that guesses what you *actually* meant. It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
 
-*(And yes, it is written in Rust. Because for obvious reasons, all new CLI tools must be blazingly fast™ and written in Rust.)*
+*(And yes, it is written in Rust. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
 
 ## 📋 Prerequisites
 
