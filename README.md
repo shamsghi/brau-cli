@@ -5,12 +5,12 @@
 <tr>
 <td width="50%">
 
-Tired of memorizing exact package names or getting errors for simple typos 🤔? `brau` is a **cozy wrapper** around _Homebrew_ that [guesses] what you *actually* $$meant$$. 
+Tired of [memorizing] exact package names or **getting errors** for simple typos 🤔?
 
-- It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
+- `brau` searches homebrew, spell-checks, installs, and more, without knowing the exact package name, and it makes your terminal look good doing it. ✨
 
 - Just install, then use `brau [appname]` and search for brew formulas and casks simultaneously. Then do `brau install [appname] -y` to install it, be prepared for the special animation at the end.
-- **Plus u can use any other brew command with `brau` but with more cool animations.**
+- **Plus u can use any other brew command with `brau` but with more cooler animations.**
 
 *(And yes, it is written in **Rust**. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
 
