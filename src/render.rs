@@ -86,46 +86,23 @@ const HONEY_HUES: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;228"];
 const TEAL_HUES: [&str; 2] = ["38;5;73", "38;5;109"];
 
 #[derive(Clone, Copy)]
-struct FinaleFrame {
-    top_pattern: &'static str,
-    middle_wrap: (&'static str, &'static str),
-    bottom_pattern: &'static str,
-    whisper: &'static str,
-}
-
-const FINALE_FRAMES: [FinaleFrame; 4] = [
-    FinaleFrame {
-        top_pattern: "~ - ~ - ~ -",
-        middle_wrap: ("<<", ">>"),
-        bottom_pattern: ". = . = . =",
-        whisper: "[freshly brewed]",
-    },
-    FinaleFrame {
-        top_pattern: "= o = o = o",
-        middle_wrap: ("[[", "]]"),
-        bottom_pattern: "- : - : - :",
-        whisper: "(cellar glow)",
-    },
-    FinaleFrame {
-        top_pattern: "~ ^ ~ ^ ~ ^",
-        middle_wrap: ("{{", "}}"),
-        bottom_pattern: "= + = + = +",
-        whisper: "",
-    },
-    FinaleFrame {
-        top_pattern: ". : . : . :",
-        middle_wrap: ("((", "))"),
-        bottom_pattern: "~ . ~ . ~ .",
-        whisper: "",
-    },
-];
-
-#[derive(Clone, Copy)]
 pub enum CatalogWarmupKind {
     FirstRun,
     StaleRefresh,
     ManualRefresh,
 }
+
+// ── Finale color palettes ────────────────────────────────────────────
+const FINALE_AMBER: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;178"];
+const FINALE_GOLD: [&str; 3] = ["1;38;5;220", "1;38;5;226", "1;38;5;228"];
+const FINALE_FOAM: [&str; 3] = ["38;5;255", "38;5;230", "38;5;223"];
+const FINALE_TEAL: [&str; 3] = ["38;5;73", "38;5;109", "38;5;116"];
+const FINALE_GREEN: [&str; 3] = ["1;38;5;114", "1;38;5;150", "1;38;5;156"];
+const FINALE_SPARKLE: [&str; 6] = [
+    "1;38;5;214", "1;38;5;177", "1;38;5;114",
+    "1;38;5;220", "1;38;5;204", "1;38;5;159",
+];
+const FINALE_CONFETTI: [char; 8] = ['✦', '✧', '·', '˚', '*', '⊹', '✶', '∘'];
 
 pub fn play_search_charm(query: &str, enabled: bool) {
     play_motion_sequence("search", query, &SEARCH_PRELUDE_STEPS, 24, enabled);
@@ -215,26 +192,264 @@ pub fn play_install_finale(package: &Package, enabled: bool) {
         return;
     }
 
+    let s = style();
     let mut stdout = io::stdout();
+    let token = &package.token;
+    let total_frames = 12;
+    let line_count = 16; // total lines per frame
 
-    for (index, frame) in FINALE_FRAMES.iter().enumerate() {
-        if index > 0 {
-            print!("\x1b[4A");
+    // Phase 1: Beer mug filling animation (frames 0-7)
+    // Phase 2: Celebration burst (frames 8-9)
+    // Phase 3: Banner reveal with package name (frames 10-11)
+
+    for frame in 0..total_frames {
+        if frame > 0 {
+            // Move cursor up to overwrite previous frame
+            print!("\x1b[{}A", line_count);
         }
 
-        for (line_index, line) in finale_lines(*frame, package).iter().enumerate() {
+        let lines = build_finale_frame(&s, token, frame, total_frames);
+        for (i, line) in lines.iter().enumerate() {
             print!("\r\x1b[2K{line}");
-            if line_index + 1 < 4 {
+            if i + 1 < lines.len() {
                 print!("\n");
             }
         }
 
         let _ = stdout.flush();
-        thread::sleep(Duration::from_millis(118));
+
+        let delay = match frame {
+            0..=2 => 160,
+            3..=5 => 130,
+            6..=7 => 110,
+            8..=9 => 200,
+            10 => 300,
+            _ => 400,
+        };
+        thread::sleep(Duration::from_millis(delay));
     }
 
     println!();
     println!();
+}
+
+fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::with_capacity(16);
+    let fill_level = frame.min(8); // mug fills over frames 0-8
+    let celebrating = frame >= 8;
+    let banner_reveal = frame >= 10;
+
+    // ── Sparkle / confetti sky ──────────────────────────────────────
+    let sky = build_sparkle_line(s, frame, 52);
+    lines.push(sky);
+
+    // ── Foam / steam rising above the mug ───────────────────────────
+    if celebrating {
+        let cheer_art = [
+            r#"        🍻  C H E E R S !  🍻"#,
+            r#"       ✦  freshly brewed  ✦"#,
+        ];
+        lines.push(s.paint_finale_rainbow(&cheer_art[0], frame));
+        lines.push(s.paint_finale_gradient(&cheer_art[1], &FINALE_GOLD, frame));
+    } else {
+        let foam_patterns: [&str; 4] = [
+            r#"            ° . ˚    ·  °"#,
+            r#"          ˚   ° .  ˚  ·"#,
+            r#"            · ˚  °  . ˚"#,
+            r#"          °  ·  ˚ .  °"#,
+        ];
+        let steam_patterns: [&str; 4] = [
+            r#"              ≈ ~ ≈"#,
+            r#"             ~ ≈ ~"#,
+            r#"              ≈ ~ ≈"#,
+            r#"             ~ ≈ ~"#,
+        ];
+        if fill_level >= 4 {
+            lines.push(s.paint_finale_gradient(
+                steam_patterns[frame % steam_patterns.len()],
+                &FINALE_FOAM,
+                frame,
+            ));
+        } else {
+            lines.push(String::new());
+        }
+        lines.push(s.paint_finale_gradient(
+            foam_patterns[frame % foam_patterns.len()],
+            &FINALE_FOAM,
+            frame + 2,
+        ));
+    }
+
+    // ── Mug top rim ─────────────────────────────────────────────────
+    let foam_top = if fill_level >= 7 {
+        r#"          .~~~~~~~~~~~~~~~~~~~~."#
+    } else {
+        r#"          .--------------------."#
+    };
+    lines.push(s.paint_finale_gradient(
+        foam_top,
+        if fill_level >= 7 { &FINALE_FOAM } else { &FINALE_TEAL },
+        frame,
+    ));
+
+    // ── Mug body (8 rows) ───────────────────────────────────────────
+    // Each row can be: empty, filling amber, or foam at the top
+    for row in 0..8u8 {
+        // row 0 = top of mug interior, row 7 = bottom
+        let filled_from_bottom = fill_level; // how many rows from bottom are filled
+        let row_from_bottom = 7 - row;
+        let is_filled = (row_from_bottom as usize) < filled_from_bottom;
+        let is_foam_row = is_filled && (row_from_bottom as usize) >= filled_from_bottom.saturating_sub(1);
+
+        let inner = if !is_filled {
+            "                    ".to_string()
+        } else if is_foam_row && fill_level < 8 {
+            // Foam layer on top of the liquid
+            build_foam_inner(frame, row)
+        } else {
+            // Beer liquid with bubbles
+            build_beer_inner(frame, row)
+        };
+
+        let handle_part = match row {
+            1 => " |",
+            2 => " |",
+            3 => " |",
+            4 => " |",
+            5 => " |",
+            6 => " |",
+            _ => "  ",
+        };
+
+        let left_wall = s.paint(FINALE_TEAL[frame % FINALE_TEAL.len()], "          |");
+        let right_wall = s.paint(FINALE_TEAL[frame % FINALE_TEAL.len()], "|");
+        let handle = s.paint(FINALE_TEAL[(frame + 1) % FINALE_TEAL.len()], handle_part);
+
+        lines.push(format!("{left_wall}{inner}{right_wall}{handle}"));
+    }
+
+    // ── Mug bottom ──────────────────────────────────────────────────
+    let mug_bottom = r#"          '===================='"#;
+    lines.push(s.paint_finale_gradient(mug_bottom, &FINALE_TEAL, frame));
+
+    // ── Package name banner ─────────────────────────────────────────
+    if banner_reveal {
+        let padded_token = format!("  ✦  {}  ✦  ", token);
+        let bar_len = padded_token.chars().count() + 4;
+        let bar = "═".repeat(bar_len);
+        let padding = " ".repeat(((52usize).saturating_sub(bar_len)) / 2);
+
+        lines.push(s.paint_finale_gradient(
+            &format!("{padding}╔{bar}╗"),
+            &FINALE_GREEN,
+            frame,
+        ));
+        lines.push(s.paint_finale_rainbow(
+            &format!("{padding}║ {padded_token} ║"),
+            frame,
+        ));
+        lines.push(s.paint_finale_gradient(
+            &format!("{padding}╚{bar}╝"),
+            &FINALE_GREEN,
+            frame,
+        ));
+    } else {
+        // Simpler pre-reveal line
+        let reveal_chars = (frame * token.len()).min(token.len() * 2) / 2;
+        let partial: String = token.chars().take(reveal_chars).collect();
+        let dots: String = std::iter::repeat('·')
+            .take(token.len().saturating_sub(reveal_chars))
+            .collect();
+        let loading = format!("          brewing: {partial}{dots}");
+        lines.push(s.paint_finale_gradient(&loading, &FINALE_AMBER, frame));
+        lines.push(String::new());
+        lines.push(String::new());
+    }
+
+    // ── Bottom sparkle line ─────────────────────────────────────────
+    let bottom_sky = build_sparkle_line(s, frame + 5, 52);
+    lines.push(bottom_sky);
+
+    // Pad to exactly 16 lines
+    while lines.len() < 16 {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+fn build_beer_inner(frame: usize, row: u8) -> String {
+    let s = style();
+    let mut out = String::new();
+    let bubble_positions: [usize; 3] = [
+        (frame * 3 + row as usize * 7) % 18,
+        (frame * 5 + row as usize * 11 + 3) % 18,
+        (frame * 7 + row as usize * 3 + 9) % 18,
+    ];
+
+    for col in 0..20 {
+        let is_bubble = bubble_positions.iter().any(|&bp| bp == col);
+        if is_bubble {
+            let bubble_char = match (frame + col) % 3 {
+                0 => "°",
+                1 => "o",
+                _ => "·",
+            };
+            out.push_str(&s.paint(
+                FINALE_FOAM[(frame + col) % FINALE_FOAM.len()],
+                bubble_char,
+            ));
+        } else {
+            // Beer amber fill with subtle variation
+            let fill_char = match (frame + col + row as usize) % 5 {
+                0 => "▓",
+                1 => "▓",
+                2 => "█",
+                3 => "▓",
+                _ => "█",
+            };
+            out.push_str(&s.paint(
+                FINALE_AMBER[(frame + col + row as usize) % FINALE_AMBER.len()],
+                fill_char,
+            ));
+        }
+    }
+    out
+}
+
+fn build_foam_inner(frame: usize, row: u8) -> String {
+    let s = style();
+    let mut out = String::new();
+    for col in 0..20 {
+        let foam_char = match (frame + col + row as usize) % 6 {
+            0 => "░",
+            1 => "▒",
+            2 => "~",
+            3 => "≈",
+            4 => "▒",
+            _ => "░",
+        };
+        out.push_str(&s.paint(
+            FINALE_FOAM[(frame + col) % FINALE_FOAM.len()],
+            foam_char,
+        ));
+    }
+    out
+}
+
+fn build_sparkle_line(s: &Style, frame: usize, width: usize) -> String {
+    let mut out = String::new();
+    for i in 0..width {
+        let seed = (frame.wrapping_mul(7).wrapping_add(i.wrapping_mul(13))) % 31;
+        if seed < 6 {
+            let ch = FINALE_CONFETTI[(frame + i) % FINALE_CONFETTI.len()];
+            let color = FINALE_SPARKLE[(frame + i) % FINALE_SPARKLE.len()];
+            out.push_str(&s.paint(color, &ch.to_string()));
+        } else {
+            out.push(' ');
+        }
+    }
+    out
 }
 
 pub fn print_help_screen() {
@@ -712,25 +927,7 @@ fn play_motion_sequence(label: &str, target: &str, steps: &[&str], frame_ms: u64
     let _ = stdout.flush();
 }
 
-fn finale_lines(frame: FinaleFrame, package: &Package) -> [String; 4] {
-    let title = format!("{} freshly brewed {}", frame.top_pattern, frame.top_pattern);
-    let middle = format!(
-        "{} {} is ready {}",
-        frame.middle_wrap.0, package.token, frame.middle_wrap.1
-    );
-    let bottom = format!(
-        "{} pour complete {}",
-        frame.bottom_pattern, frame.bottom_pattern
-    );
-    let whisper = frame.whisper.to_string();
 
-    [
-        style().finale_top(&title),
-        style().finale_middle(&middle),
-        style().finale_bottom(&bottom),
-        style().finale_whisper(&whisper),
-    ]
-}
 
 fn print_catalog_warmup_note(kind: CatalogWarmupKind) {
     let spec = catalog_warmup_spec(kind);
@@ -1403,20 +1600,44 @@ impl Style {
         )
     }
 
-    fn finale_top(&self, value: &str) -> String {
-        self.bold_cyan(value)
+    fn paint_finale_rainbow(&self, value: &str, frame: usize) -> String {
+        if !self.enabled {
+            return value.to_string();
+        }
+        let rainbow: [&str; 6] = [
+            "1;38;5;220", "1;38;5;214", "1;38;5;209",
+            "1;38;5;177", "1;38;5;114", "1;38;5;159",
+        ];
+        let mut out = String::new();
+        let mut color_index = frame;
+        for ch in value.chars() {
+            if ch.is_whitespace() {
+                out.push(ch);
+            } else {
+                let code = rainbow[color_index % rainbow.len()];
+                out.push_str(&format!("\x1b[{code}m{ch}\x1b[0m"));
+                color_index += 1;
+            }
+        }
+        out
     }
 
-    fn finale_middle(&self, value: &str) -> String {
-        self.paint("1;33", value)
-    }
-
-    fn finale_bottom(&self, value: &str) -> String {
-        self.magenta(value)
-    }
-
-    fn finale_whisper(&self, value: &str) -> String {
-        self.bold_green(value)
+    fn paint_finale_gradient(&self, value: &str, palette: &[&str], frame: usize) -> String {
+        if !self.enabled {
+            return value.to_string();
+        }
+        let mut out = String::new();
+        let mut color_index = frame;
+        for ch in value.chars() {
+            if ch.is_whitespace() {
+                out.push(ch);
+            } else {
+                let code = palette[color_index % palette.len()];
+                out.push_str(&format!("\x1b[{code}m{ch}\x1b[0m"));
+                color_index += 1;
+            }
+        }
+        out
     }
 
     fn paint(&self, code: &str, value: &str) -> String {
