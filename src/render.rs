@@ -1,7 +1,8 @@
 use std::env;
 use std::io::{self, IsTerminal, Write};
+use std::process;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -121,17 +122,112 @@ pub enum CatalogWarmupKind {
     ManualRefresh,
 }
 
-// ── Finale color palettes ────────────────────────────────────────────
-const FINALE_AMBER: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;178"];
-const FINALE_GOLD: [&str; 3] = ["1;38;5;220", "1;38;5;226", "1;38;5;228"];
-const FINALE_FOAM: [&str; 3] = ["38;5;255", "38;5;230", "38;5;223"];
-const FINALE_TEAL: [&str; 3] = ["38;5;73", "38;5;109", "38;5;116"];
-const FINALE_GREEN: [&str; 3] = ["1;38;5;114", "1;38;5;150", "1;38;5;156"];
-const FINALE_SPARKLE: [&str; 6] = [
-    "1;38;5;214", "1;38;5;177", "1;38;5;114",
-    "1;38;5;220", "1;38;5;204", "1;38;5;159",
-];
+// ── Finale color themes ──────────────────────────────────────────────
+// Each theme is a cohesive palette. One is chosen at random per run.
 const FINALE_CONFETTI: [char; 8] = ['✦', '✧', '·', '˚', '*', '⊹', '✶', '∘'];
+
+#[derive(Clone, Copy)]
+struct FinaleTheme {
+    /// Liquid fill color (4 shades)
+    amber: [&'static str; 4],
+    /// Header / cheer accent (3 bold shades)
+    gold: [&'static str; 3],
+    /// Foam / bubble highlights (3 shades)
+    foam: [&'static str; 3],
+    /// Mug walls + structural lines (3 shades)
+    teal: [&'static str; 3],
+    /// Banner / success accent (3 bold shades)
+    green: [&'static str; 3],
+    /// Sparkle / confetti particles (6 bold shades)
+    sparkle: [&'static str; 6],
+}
+
+const FINALE_THEMES: [FinaleTheme; 8] = [
+    // 0 · Amber Ale  — the classic warm golden brew
+    FinaleTheme {
+        amber:   ["38;5;214", "38;5;220", "38;5;221", "38;5;178"],
+        gold:    ["1;38;5;220", "1;38;5;226", "1;38;5;228"],
+        foam:    ["38;5;255", "38;5;230", "38;5;223"],
+        teal:    ["38;5;73",  "38;5;109", "38;5;116"],
+        green:   ["1;38;5;114", "1;38;5;150", "1;38;5;156"],
+        sparkle: ["1;38;5;214", "1;38;5;177", "1;38;5;114", "1;38;5;220", "1;38;5;204", "1;38;5;159"],
+    },
+    // 1 · Tropical IPA  — mango, lime, papaya
+    FinaleTheme {
+        amber:   ["38;5;215", "38;5;221", "38;5;222", "38;5;179"],
+        gold:    ["1;38;5;228", "1;38;5;222", "1;38;5;186"],
+        foam:    ["38;5;229", "38;5;223", "38;5;187"],
+        teal:    ["38;5;114", "38;5;150", "38;5;79"],
+        green:   ["1;38;5;156", "1;38;5;192", "1;38;5;228"],
+        sparkle: ["1;38;5;215", "1;38;5;222", "1;38;5;156", "1;38;5;228", "1;38;5;114", "1;38;5;186"],
+    },
+    // 2 · Berry Sour  — raspberry, plum, violet
+    FinaleTheme {
+        amber:   ["38;5;168", "38;5;204", "38;5;211", "38;5;175"],
+        gold:    ["1;38;5;212", "1;38;5;218", "1;38;5;225"],
+        foam:    ["38;5;225", "38;5;218", "38;5;182"],
+        teal:    ["38;5;133", "38;5;140", "38;5;177"],
+        green:   ["1;38;5;183", "1;38;5;219", "1;38;5;225"],
+        sparkle: ["1;38;5;204", "1;38;5;177", "1;38;5;219", "1;38;5;212", "1;38;5;183", "1;38;5;225"],
+    },
+    // 3 · Ocean Stout  — deep teal, seafoam, moonlight
+    FinaleTheme {
+        amber:   ["38;5;24",  "38;5;30",  "38;5;31",  "38;5;37"],
+        gold:    ["1;38;5;117", "1;38;5;123", "1;38;5;159"],
+        foam:    ["38;5;159", "38;5;153", "38;5;195"],
+        teal:    ["38;5;30",  "38;5;37",  "38;5;73"],
+        green:   ["1;38;5;79",  "1;38;5;115", "1;38;5;158"],
+        sparkle: ["1;38;5;117", "1;38;5;159", "1;38;5;79",  "1;38;5;123", "1;38;5;153", "1;38;5;195"],
+    },
+    // 4 · Aurora Lager  — arctic green, violet, electric blue
+    FinaleTheme {
+        amber:   ["38;5;48",  "38;5;84",  "38;5;85",  "38;5;49"],
+        gold:    ["1;38;5;121", "1;38;5;158", "1;38;5;194"],
+        foam:    ["38;5;194", "38;5;158", "38;5;195"],
+        teal:    ["38;5;63",  "38;5;99",  "38;5;141"],
+        green:   ["1;38;5;84",  "1;38;5;121", "1;38;5;157"],
+        sparkle: ["1;38;5;48",  "1;38;5;141", "1;38;5;84",  "1;38;5;177", "1;38;5;121", "1;38;5;159"],
+    },
+    // 5 · Cherry Blossom  — sakura pink, peach, soft rose
+    FinaleTheme {
+        amber:   ["38;5;217", "38;5;218", "38;5;224", "38;5;181"],
+        gold:    ["1;38;5;218", "1;38;5;224", "1;38;5;230"],
+        foam:    ["38;5;230", "38;5;224", "38;5;188"],
+        teal:    ["38;5;138", "38;5;175", "38;5;181"],
+        green:   ["1;38;5;218", "1;38;5;224", "1;38;5;223"],
+        sparkle: ["1;38;5;217", "1;38;5;224", "1;38;5;218", "1;38;5;181", "1;38;5;175", "1;38;5;230"],
+    },
+    // 6 · Neon Haze  — electric cyan, hot magenta, lime
+    FinaleTheme {
+        amber:   ["38;5;45",  "38;5;51",  "38;5;87",  "38;5;123"],
+        gold:    ["1;38;5;201", "1;38;5;207", "1;38;5;213"],
+        foam:    ["38;5;195", "38;5;189", "38;5;159"],
+        teal:    ["38;5;201", "38;5;165", "38;5;129"],
+        green:   ["1;38;5;118", "1;38;5;154", "1;38;5;190"],
+        sparkle: ["1;38;5;51",  "1;38;5;201", "1;38;5;118", "1;38;5;213", "1;38;5;87",  "1;38;5;190"],
+    },
+    // 7 · Copper Porter  — burnished copper, mahogany, warm cream
+    FinaleTheme {
+        amber:   ["38;5;130", "38;5;166", "38;5;172", "38;5;136"],
+        gold:    ["1;38;5;173", "1;38;5;179", "1;38;5;223"],
+        foam:    ["38;5;223", "38;5;217", "38;5;181"],
+        teal:    ["38;5;94",  "38;5;130", "38;5;137"],
+        green:   ["1;38;5;179", "1;38;5;186", "1;38;5;223"],
+        sparkle: ["1;38;5;172", "1;38;5;179", "1;38;5;186", "1;38;5;173", "1;38;5;223", "1;38;5;130"],
+    },
+];
+
+/// Pick a finale theme using runtime entropy so each install feels fresh.
+fn pick_finale_theme() -> &'static FinaleTheme {
+    let pid = process::id() as usize;
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as usize)
+        .unwrap_or(0);
+    // Mix PID and nanoseconds for good spread even in rapid succession
+    let seed = pid.wrapping_mul(2654435761).wrapping_add(nanos);
+    &FINALE_THEMES[seed % FINALE_THEMES.len()]
+}
 
 pub fn play_search_charm(query: &str, enabled: bool) {
     play_motion_sequence("search", query, &SEARCH_PRELUDE_STEPS, 24, enabled);
@@ -209,6 +305,7 @@ pub fn play_install_finale(package: &Package, enabled: bool) {
     }
 
     let s = style();
+    let theme = pick_finale_theme();
     let mut stdout = io::stdout();
     let token = &package.token;
     let total_frames = 12;
@@ -224,7 +321,7 @@ pub fn play_install_finale(package: &Package, enabled: bool) {
             print!("\x1b[{}A", line_count);
         }
 
-        let lines = build_finale_frame(&s, token, frame, total_frames);
+        let lines = build_finale_frame(&s, theme, token, frame, total_frames);
         for (i, line) in lines.iter().enumerate() {
             print!("\r\x1b[2K{line}");
             if i + 1 < lines.len() {
@@ -249,14 +346,14 @@ pub fn play_install_finale(package: &Package, enabled: bool) {
     println!();
 }
 
-fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Vec<String> {
+fn build_finale_frame(s: &Style, t: &FinaleTheme, token: &str, frame: usize, _total: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(16);
     let fill_level = frame.min(8); // mug fills over frames 0-8
     let celebrating = frame >= 8;
     let banner_reveal = frame >= 10;
 
     // ── Sparkle / confetti sky ──────────────────────────────────────
-    let sky = build_sparkle_line(s, frame, 52);
+    let sky = build_sparkle_line(s, t, frame, 52);
     lines.push(sky);
 
     // ── Foam / steam rising above the mug ───────────────────────────
@@ -265,8 +362,8 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
             r#"        🍻  C H E E R S !  🍻"#,
             r#"       ✦  freshly brewed  ✦"#,
         ];
-        lines.push(s.paint_finale_rainbow(&cheer_art[0], frame));
-        lines.push(s.paint_finale_gradient(&cheer_art[1], &FINALE_GOLD, frame));
+        lines.push(s.paint_finale_gradient(&cheer_art[0], &t.sparkle, frame));
+        lines.push(s.paint_finale_gradient(&cheer_art[1], &t.gold, frame));
     } else {
         let foam_patterns: [&str; 4] = [
             r#"            ° . ˚    ·  °"#,
@@ -283,7 +380,7 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
         if fill_level >= 4 {
             lines.push(s.paint_finale_gradient(
                 steam_patterns[frame % steam_patterns.len()],
-                &FINALE_FOAM,
+                &t.foam,
                 frame,
             ));
         } else {
@@ -291,7 +388,7 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
         }
         lines.push(s.paint_finale_gradient(
             foam_patterns[frame % foam_patterns.len()],
-            &FINALE_FOAM,
+            &t.foam,
             frame + 2,
         ));
     }
@@ -304,7 +401,7 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
     };
     lines.push(s.paint_finale_gradient(
         foam_top,
-        if fill_level >= 7 { &FINALE_FOAM } else { &FINALE_TEAL },
+        if fill_level >= 7 { &t.foam } else { &t.teal },
         frame,
     ));
 
@@ -321,10 +418,10 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
             "                    ".to_string()
         } else if is_foam_row && fill_level < 8 {
             // Foam layer on top of the liquid
-            build_foam_inner(frame, row)
+            build_foam_inner(t, frame, row)
         } else {
             // Beer liquid with bubbles
-            build_beer_inner(frame, row)
+            build_beer_inner(t, frame, row)
         };
 
         let handle_part = match row {
@@ -337,16 +434,16 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
             _ => "  ",
         };
 
-        let left_wall = s.paint(FINALE_TEAL[frame % FINALE_TEAL.len()], "          |");
-        let right_wall = s.paint(FINALE_TEAL[frame % FINALE_TEAL.len()], "|");
-        let handle = s.paint(FINALE_TEAL[(frame + 1) % FINALE_TEAL.len()], handle_part);
+        let left_wall = s.paint(t.teal[frame % t.teal.len()], "          |");
+        let right_wall = s.paint(t.teal[frame % t.teal.len()], "|");
+        let handle = s.paint(t.teal[(frame + 1) % t.teal.len()], handle_part);
 
         lines.push(format!("{left_wall}{inner}{right_wall}{handle}"));
     }
 
     // ── Mug bottom ──────────────────────────────────────────────────
     let mug_bottom = r#"          '===================='"#;
-    lines.push(s.paint_finale_gradient(mug_bottom, &FINALE_TEAL, frame));
+    lines.push(s.paint_finale_gradient(mug_bottom, &t.teal, frame));
 
     // ── Package name banner ─────────────────────────────────────────
     if banner_reveal {
@@ -357,16 +454,17 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
 
         lines.push(s.paint_finale_gradient(
             &format!("{padding}╔{bar}╗"),
-            &FINALE_GREEN,
+            &t.green,
             frame,
         ));
-        lines.push(s.paint_finale_rainbow(
+        lines.push(s.paint_finale_gradient(
             &format!("{padding}║ {padded_token} ║"),
+            &t.sparkle,
             frame,
         ));
         lines.push(s.paint_finale_gradient(
             &format!("{padding}╚{bar}╝"),
-            &FINALE_GREEN,
+            &t.green,
             frame,
         ));
     } else {
@@ -377,13 +475,13 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
             .take(token.len().saturating_sub(reveal_chars))
             .collect();
         let loading = format!("          brewing: {partial}{dots}");
-        lines.push(s.paint_finale_gradient(&loading, &FINALE_AMBER, frame));
+        lines.push(s.paint_finale_gradient(&loading, &t.amber, frame));
         lines.push(String::new());
         lines.push(String::new());
     }
 
     // ── Bottom sparkle line ─────────────────────────────────────────
-    let bottom_sky = build_sparkle_line(s, frame + 5, 52);
+    let bottom_sky = build_sparkle_line(s, t, frame + 5, 52);
     lines.push(bottom_sky);
 
     // Pad to exactly 16 lines
@@ -394,7 +492,7 @@ fn build_finale_frame(s: &Style, token: &str, frame: usize, _total: usize) -> Ve
     lines
 }
 
-fn build_beer_inner(frame: usize, row: u8) -> String {
+fn build_beer_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
     let s = style();
     let mut out = String::new();
     let bubble_positions: [usize; 3] = [
@@ -412,7 +510,7 @@ fn build_beer_inner(frame: usize, row: u8) -> String {
                 _ => "·",
             };
             out.push_str(&s.paint(
-                FINALE_FOAM[(frame + col) % FINALE_FOAM.len()],
+                t.foam[(frame + col) % t.foam.len()],
                 bubble_char,
             ));
         } else {
@@ -425,7 +523,7 @@ fn build_beer_inner(frame: usize, row: u8) -> String {
                 _ => "█",
             };
             out.push_str(&s.paint(
-                FINALE_AMBER[(frame + col + row as usize) % FINALE_AMBER.len()],
+                t.amber[(frame + col + row as usize) % t.amber.len()],
                 fill_char,
             ));
         }
@@ -433,7 +531,7 @@ fn build_beer_inner(frame: usize, row: u8) -> String {
     out
 }
 
-fn build_foam_inner(frame: usize, row: u8) -> String {
+fn build_foam_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
     let s = style();
     let mut out = String::new();
     for col in 0..20 {
@@ -446,20 +544,20 @@ fn build_foam_inner(frame: usize, row: u8) -> String {
             _ => "░",
         };
         out.push_str(&s.paint(
-            FINALE_FOAM[(frame + col) % FINALE_FOAM.len()],
+            t.foam[(frame + col) % t.foam.len()],
             foam_char,
         ));
     }
     out
 }
 
-fn build_sparkle_line(s: &Style, frame: usize, width: usize) -> String {
+fn build_sparkle_line(s: &Style, t: &FinaleTheme, frame: usize, width: usize) -> String {
     let mut out = String::new();
     for i in 0..width {
         let seed = (frame.wrapping_mul(7).wrapping_add(i.wrapping_mul(13))) % 31;
         if seed < 6 {
             let ch = FINALE_CONFETTI[(frame + i) % FINALE_CONFETTI.len()];
-            let color = FINALE_SPARKLE[(frame + i) % FINALE_SPARKLE.len()];
+            let color = t.sparkle[(frame + i) % t.sparkle.len()];
             out.push_str(&s.paint(color, &ch.to_string()));
         } else {
             out.push(' ');
@@ -1548,28 +1646,6 @@ impl Style {
             self.paint(center.0, center.1),
             self.paint(right.0, right.1)
         )
-    }
-
-    fn paint_finale_rainbow(&self, value: &str, frame: usize) -> String {
-        if !self.enabled {
-            return value.to_string();
-        }
-        let rainbow: [&str; 6] = [
-            "1;38;5;220", "1;38;5;214", "1;38;5;209",
-            "1;38;5;177", "1;38;5;114", "1;38;5;159",
-        ];
-        let mut out = String::new();
-        let mut color_index = frame;
-        for ch in value.chars() {
-            if ch.is_whitespace() {
-                out.push(ch);
-            } else {
-                let code = rainbow[color_index % rainbow.len()];
-                out.push_str(&format!("\x1b[{code}m{ch}\x1b[0m"));
-                color_index += 1;
-            }
-        }
-        out
     }
 
     fn paint_finale_gradient(&self, value: &str, palette: &[&str], frame: usize) -> String {
