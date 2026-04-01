@@ -1,20 +1,18 @@
-# 🍻 brau
+# 🍻 brau: homebrew but smarter
 
-## **The Homebrew companion that actually installs what you meant.**
+### **Improved `brew search` that understands you.**
 <table>
 <tr>
 <td width="50%">
 
-Tired of memorizing exact package names or getting errors for simple typos?
-🤔
+Tired of memorizing exact package names or getting errors for simple typos 🤔? `brau` is a **cozy wrapper** around _Homebrew_ that [guesses] what you *actually* $$meant$$. 
 
-`brau` is a **cozy wrapper** around _Homebrew_ that [guesses] what you *actually* $$meant$$. 
+- It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
 
-It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
+- Just install, then use `brau [appname]` and search for brew formulas and casks simultaneously. Then do `brau install [appname] -y` to install it, be prepared for the special animation at the end.
+- **Plus u can use any other brew command with `brau` but with more cool animations.**
 
-
-*(And yes, it is written in Rust. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
-
+*(And yes, it is written in **Rust**. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
 
 </td>
 <td width="45%">
