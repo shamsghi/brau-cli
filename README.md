@@ -10,6 +10,7 @@ Tired of [memorizing] exact package names or **getting errors** for simple typos
 - `brau` searches homebrew, spell-checks, installs, and more, without knowing the exact package name, and it makes your terminal look good doing it. ✨
 
 - Just install, then use `brau [appname]` and search for brew formulas and casks simultaneously. Then do `brau install [appname] -y` to install it, be prepared for the special animation at the end.
+- **Install multiple packages at once** with commas: `brau install foo, bar, baz` — with a combined blender finale. 🍹
 - **Plus u can use any other brew command with `brau` but with more cooler animations.**
 
 *(And yes, it is written in **Rust**. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
@@ -70,6 +71,13 @@ brau install pg          # Finds the best match and installs it!
 brau uninstall postgresql # Say goodbye
 ```
 
+**Batch install/uninstall (comma-separated):**
+```bash
+brau install ripgrep, bat, fd         # Install all three at once!
+brau uninstall bat, fd --yes          # Uninstall multiple, skip confirmation
+brau install google chrome, firefox --cask  # Multiple casks
+```
+
 **Do regular Homebrew stuff:**
 ```bash
 brau update              # Passes straight to brew
@@ -85,6 +93,7 @@ brau cleanup --prune=all
 | Finding casks | Separate `--cask` flag required | Searches both automatically |
 | Acronym search (`pg`, `vsc`) | ❌ No results | ✅ Matches `postgresql`, `visual-studio-code` |
 | Old / renamed packages | ❌ Not found | ✅ Matched via old names & aliases |
+| Batch install | 🐌 One at a time | ✅ `brau install a, b, c` with batch preview |
 | Regular brew commands | ✅ Native | ✅ Passed straight through |
 | Fun animations | 😐 | 🎉 |
 

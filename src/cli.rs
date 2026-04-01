@@ -30,12 +30,12 @@ pub enum CommandKind {
         query: String,
     },
     Install {
-        query: String,
+        queries: Vec<String>,
         yes: bool,
         dry_run: bool,
     },
     Uninstall {
-        query: String,
+        queries: Vec<String>,
         yes: bool,
         dry_run: bool,
     },
@@ -141,12 +141,12 @@ impl Cli {
                 query: join_query(positionals)?,
             },
             Some("install") => CommandKind::Install {
-                query: join_query(positionals)?,
+                queries: split_queries(join_query(positionals)?),
                 yes,
                 dry_run,
             },
             Some("uninstall") => CommandKind::Uninstall {
-                query: join_query(positionals)?,
+                queries: split_queries(join_query(positionals)?),
                 yes,
                 dry_run,
             },
@@ -184,15 +184,18 @@ Fuzzy search Homebrew formulae and casks, show richer package details,
 and install matches directly from inside the CLI.
 
 `search` is the default command, so `brau rg` works as shorthand for
-`brau search rg`. Bare Homebrew commands such as `brau update`
-or `brau cleanup --prune=all` also pass through to `brew`.
+`brau search rg`. Separate multiple packages with commas:
+`brau install foo, bar, baz`.
+
+Bare Homebrew commands such as `brau update` or `brau cleanup --prune=all`
+also pass through to `brew`.
 
 USAGE:
     brau [OPTIONS] <query...>
     brau search [OPTIONS] <query...>
-    brau info [OPTIONS] <query...>
-    brau install [OPTIONS] <query...>
-    brau uninstall [OPTIONS] <query...>
+    brau info [OPTIONS] <query..>
+    brau install [OPTIONS] <query[, query...]>
+    brau uninstall [OPTIONS] <query[, query...]>
     brau brew <brew-command...>
     brau refresh
 
@@ -212,10 +215,11 @@ EXAMPLES:
     brau vscode --cask
     brau info docker desktop
     brau install rg
+    brau install ripgrep, bat, fd
     brau uninstall ripgrep --yes
+    brau uninstall bat, fd --yes
     brau update
     brau brew cleanup
-    brau brew update --verbose
     brau install google chrome --cask
     brau install ripgrep --no-finale
     brau refresh
@@ -230,6 +234,14 @@ fn join_query(parts: Vec<String>) -> Result<String, String> {
     } else {
         Ok(query)
     }
+}
+
+fn split_queries(combined: String) -> Vec<String> {
+    combined
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 #[cfg(test)]
@@ -264,11 +276,11 @@ mod tests {
 
         match cli.command {
             CommandKind::Uninstall {
-                query,
+                queries,
                 yes,
                 dry_run,
             } => {
-                assert_eq!(query, "ripgrep");
+                assert_eq!(queries, vec!["ripgrep"]);
                 assert!(yes);
                 assert!(dry_run);
             }

@@ -333,31 +333,59 @@ fn run() -> Result<(), String> {
         }
         CommandKind::Info { query } => run_info(&load.catalog, &query, cli.scope, motion),
         CommandKind::Install {
-            query,
+            queries,
             yes,
             dry_run,
-        } => run_action(
-            &load.catalog,
-            &query,
-            cli.scope,
-            yes,
-            dry_run,
-            motion,
-            BrewAction::Install,
-        ),
+        } => {
+            if queries.len() == 1 {
+                run_action(
+                    &load.catalog,
+                    &queries[0],
+                    cli.scope,
+                    yes,
+                    dry_run,
+                    motion,
+                    BrewAction::Install,
+                )
+            } else {
+                run_batch_action(
+                    &load.catalog,
+                    &queries,
+                    cli.scope,
+                    yes,
+                    dry_run,
+                    motion,
+                    BrewAction::Install,
+                )
+            }
+        }
         CommandKind::Uninstall {
-            query,
+            queries,
             yes,
             dry_run,
-        } => run_action(
-            &load.catalog,
-            &query,
-            cli.scope,
-            yes,
-            dry_run,
-            motion,
-            BrewAction::Uninstall,
-        ),
+        } => {
+            if queries.len() == 1 {
+                run_action(
+                    &load.catalog,
+                    &queries[0],
+                    cli.scope,
+                    yes,
+                    dry_run,
+                    motion,
+                    BrewAction::Uninstall,
+                )
+            } else {
+                run_batch_action(
+                    &load.catalog,
+                    &queries,
+                    cli.scope,
+                    yes,
+                    dry_run,
+                    motion,
+                    BrewAction::Uninstall,
+                )
+            }
+        }
         CommandKind::Brew { .. } | CommandKind::Refresh | CommandKind::Help => Ok(()),
     }
 }
@@ -734,6 +762,118 @@ fn run_action(
     render::print_action_candidates(query, action.label(), &matches, action.candidates_footer());
     let selected = prompt_match_selection(&matches)?;
     execute_brew_action(selected.package, action, dry_run, motion)
+}
+
+fn run_batch_action(
+    catalog: &Catalog,
+    queries: &[String],
+    scope: QueryScope,
+    yes: bool,
+    dry_run: bool,
+    motion: MotionSettings,
+    action: BrewAction,
+) -> Result<(), String> {
+    // Phase 1: Resolve every query — abort on ambiguity
+    let mut resolved: Vec<&Package> = Vec::new();
+
+    for query in queries {
+        let matches = run_with_motion(
+            should_run_motion(motion),
+            || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
+            || render::play_search_charm(query, motion.animations_enabled),
+        )?;
+
+        let best = matches
+            .first()
+            .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
+
+        if !is_confident(best, matches.get(1)) {
+            render::print_action_candidates(
+                query,
+                action.label(),
+                &matches,
+                action.candidates_footer(),
+            );
+            return Err(format!(
+                "The query \"{query}\" is ambiguous. Be more specific or {} each package individually.",
+                action.label()
+            ));
+        }
+
+        resolved.push(best.package);
+    }
+
+    // Phase 2: Batch preview
+    render::print_batch_action_preview(action.label(), &resolved);
+
+    // Phase 3: Confirm
+    if !yes {
+        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+            return Err(format!(
+                "Interactive batch {} requires a terminal. Use `--yes` with specific queries instead.",
+                action.present_participle()
+            ));
+        }
+
+        let prompt = format!(
+            "{} {} package{} now?",
+            capitalize(action.label()),
+            resolved.len(),
+            if resolved.len() == 1 { "" } else { "s" }
+        );
+
+        if !prompt_yes_no(&prompt)? {
+            println!("{} cancelled.", capitalize(action.label()));
+            return Ok(());
+        }
+    }
+
+    // Phase 4: Execute each — suppress individual finales
+    let batch_motion = MotionSettings {
+        animations_enabled: motion.animations_enabled,
+        finale_enabled: false,
+    };
+
+    let mut succeeded: Vec<&Package> = Vec::new();
+    let mut failed: Vec<(&Package, String)> = Vec::new();
+
+    for package in &resolved {
+        match execute_brew_action(package, action, dry_run, batch_motion) {
+            Ok(()) => succeeded.push(package),
+            Err(error) => {
+                eprintln!(
+                    "Failed to {} {}: {}",
+                    action.label(),
+                    package.token,
+                    error
+                );
+                failed.push((package, error));
+            }
+        }
+    }
+
+    // Phase 5: Combined finale
+    if action.should_celebrate() && motion.finale_enabled && !dry_run && !succeeded.is_empty() {
+        let tokens: Vec<&str> = succeeded.iter().map(|p| p.token.as_str()).collect();
+        render::play_batch_install_finale(&tokens, true);
+    }
+
+    if !failed.is_empty() {
+        let names: Vec<&str> = failed.iter().map(|(p, _)| p.token.as_str()).collect();
+        let count = if failed.len() == 1 {
+            "1 package".to_string()
+        } else {
+            format!("{} packages", failed.len())
+        };
+        return Err(format!(
+            "Failed to {} {}: {}",
+            action.label(),
+            count,
+            names.join(", ")
+        ));
+    }
+
+    Ok(())
 }
 
 fn execute_brew_action(

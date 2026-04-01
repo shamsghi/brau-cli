@@ -425,12 +425,12 @@ fn build_finale_frame(s: &Style, t: &FinaleTheme, token: &str, frame: usize, _to
         };
 
         let handle_part = match row {
-            1 => " |",
-            2 => " |",
-            3 => " |",
-            4 => " |",
-            5 => " |",
-            6 => " |",
+            1 => "─╮",
+            2 => " │",
+            3 => " │",
+            4 => " │",
+            5 => " │",
+            6 => "─╯",
             _ => "  ",
         };
 
@@ -565,6 +565,284 @@ fn build_sparkle_line(s: &Style, t: &FinaleTheme, frame: usize, width: usize) ->
     }
     out
 }
+
+// ── Batch action preview ─────────────────────────────────────────────
+
+pub fn print_batch_action_preview(action: &str, packages: &[&Package]) {
+    let s = style();
+
+    println!(
+        "{}",
+        s.frame_title_for(
+            action,
+            "✨",
+            &format!(
+                "Ready to {} {} package{}",
+                action,
+                packages.len(),
+                if packages.len() == 1 { "" } else { "s" }
+            )
+        )
+    );
+
+    println!("{}", s.winner_rule());
+
+    for (i, package) in packages.iter().enumerate() {
+        let mut title = format!("  {}", format_title(package, false));
+        if let Some(version) = package.version.as_deref() {
+            title.push_str("  ");
+            title.push_str(&s.version(version));
+        }
+        if package.installed {
+            title.push_str("  ");
+            title.push_str(&s.status_chip("installed"));
+        }
+
+        println!("{} {}", s.winner_pipe(), title);
+        println!("{}    {}", s.winner_pipe(), s.body(&package.desc));
+
+        if i + 1 < packages.len() {
+            println!("{}", s.winner_pipe());
+        }
+    }
+
+    println!("{}", s.winner_rule());
+    println!();
+    println!(
+        "{}",
+        s.frame_footer_for(
+            action,
+            &format!("press y to {} all, or n to cancel", action)
+        )
+    );
+    println!();
+}
+
+// ── Batch blender finale ─────────────────────────────────────────────
+
+pub fn play_batch_install_finale(tokens: &[&str], enabled: bool) {
+    if !enabled || !style().should_animate() || tokens.is_empty() {
+        return;
+    }
+
+    let s = style();
+    let theme = pick_finale_theme();
+    let mut stdout = io::stdout();
+    let total_frames = 14;
+    let extra_banner_lines = tokens.len().saturating_sub(1);
+    let line_count = 16 + extra_banner_lines;
+
+    for frame in 0..total_frames {
+        if frame > 0 {
+            print!("\x1b[{}A", line_count);
+        }
+
+        let lines = build_blender_frame(&s, theme, tokens, frame, total_frames);
+        for (i, line) in lines.iter().enumerate() {
+            print!("\r\x1b[2K{line}");
+            if i + 1 < lines.len() {
+                print!("\n");
+            }
+        }
+
+        let _ = stdout.flush();
+
+        let delay = match frame {
+            0..=2 => 140,
+            3..=5 => 110,
+            6..=8 => 90,
+            9..=10 => 180,
+            11..=12 => 260,
+            _ => 380,
+        };
+        thread::sleep(Duration::from_millis(delay));
+    }
+
+    println!();
+    println!();
+}
+
+fn build_blender_frame(
+    s: &Style,
+    t: &FinaleTheme,
+    tokens: &[&str],
+    frame: usize,
+    _total: usize,
+) -> Vec<String> {
+    let extra_banner = tokens.len().saturating_sub(1);
+    let target_lines = 16 + extra_banner;
+    let mut lines: Vec<String> = Vec::with_capacity(target_lines);
+    let blend_level = frame.min(9);
+    let celebrating = frame >= 9;
+    let banner_reveal = frame >= 11;
+
+    // ── Sparkle / confetti sky ──
+    lines.push(build_sparkle_line(s, t, frame, 52));
+
+    // ── Steam / celebration ──
+    if celebrating {
+        let cheer = [
+            r#"       🍹  B L E N D E D !  🍹"#,
+            r#"      ✦  freshly mixed  ✦"#,
+        ];
+        lines.push(s.paint_finale_gradient(cheer[0], &t.sparkle, frame));
+        lines.push(s.paint_finale_gradient(cheer[1], &t.gold, frame));
+    } else {
+        let steam: [&str; 4] = [
+            r#"              ≈ ~ ≈"#,
+            r#"             ~ ≈ ~"#,
+            r#"              ≈ ~ ≈"#,
+            r#"             ~ ≈ ~"#,
+        ];
+        if blend_level >= 5 {
+            lines.push(s.paint_finale_gradient(
+                steam[frame % steam.len()],
+                &t.foam,
+                frame,
+            ));
+        } else {
+            lines.push(String::new());
+        }
+        let drops: [&str; 4] = [
+            r#"          ·  ˚  ∘    ✦  ·  ˚"#,
+            r#"            ˚  ·  ✦    ∘  ·"#,
+            r#"          ∘    ·  ˚  ·  ✦  ˚"#,
+            r#"            ·  ✦  ˚    ·  ∘"#,
+        ];
+        lines.push(s.paint_finale_gradient(
+            drops[frame % drops.len()],
+            &t.sparkle,
+            frame,
+        ));
+    }
+
+    // ── Container top rim ──
+    let rim = if blend_level >= 8 {
+        r#"          .~~~~~~~~~~~~~~~~~~~~."#
+    } else {
+        r#"          .--------------------."#
+    };
+    lines.push(s.paint_finale_gradient(
+        rim,
+        if blend_level >= 8 { &t.foam } else { &t.teal },
+        frame,
+    ));
+
+    // ── Container body (8 rows) with blender vortex ──
+    for row in 0..8u8 {
+        let row_from_bottom = 7 - row;
+        let is_filled = (row_from_bottom as usize) < blend_level;
+
+        let inner = if !is_filled {
+            "                    ".to_string()
+        } else {
+            build_blender_inner(t, frame, row)
+        };
+
+        let handle_part = match row {
+            1 => "─╮",
+            2 => " │",
+            3 => " │",
+            4 => " │",
+            5 => " │",
+            6 => "─╯",
+            _ => "  ",
+        };
+
+        let left_wall = s.paint(t.teal[frame % t.teal.len()], "          |");
+        let right_wall = s.paint(t.teal[frame % t.teal.len()], "|");
+        let handle = s.paint(t.teal[(frame + 1) % t.teal.len()], handle_part);
+
+        lines.push(format!("{left_wall}{inner}{right_wall}{handle}"));
+    }
+
+    // ── Container bottom ──
+    lines.push(s.paint_finale_gradient(
+        r#"          '===================='"#,
+        &t.teal,
+        frame,
+    ));
+
+    // ── Package names banner ──
+    if banner_reveal {
+        let longest = tokens.iter().map(|t| t.chars().count()).max().unwrap_or(0);
+        let inner_width = longest + 12; // "  ✦  " + token + "  ✦  "
+        let bar_len = inner_width + 2;
+        let bar = "═".repeat(bar_len);
+        let padding = " ".repeat(52usize.saturating_sub(bar_len + 2) / 2);
+
+        lines.push(s.paint_finale_gradient(
+            &format!("{padding}╔{bar}╗"),
+            &t.green,
+            frame,
+        ));
+        for (i, token) in tokens.iter().enumerate() {
+            let label = format!("  ✦  {}  ✦", token);
+            let pad_right = inner_width.saturating_sub(label.chars().count());
+            let content = format!("{label}{}", " ".repeat(pad_right));
+            lines.push(s.paint_finale_gradient(
+                &format!("{padding}║ {content} ║"),
+                &t.sparkle,
+                frame + i,
+            ));
+        }
+        lines.push(s.paint_finale_gradient(
+            &format!("{padding}╚{bar}╝"),
+            &t.green,
+            frame,
+        ));
+    } else {
+        // Pre-reveal: blending progress bar
+        let bar_chars = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        let filled = (frame * 2).min(bar_chars.len());
+        let progress: String = bar_chars[..filled].iter().collect();
+        let loading = format!("          blending: {progress}");
+        lines.push(s.paint_finale_gradient(&loading, &t.sparkle, frame));
+        // Pad for the banner lines we haven't revealed yet
+        for _ in 0..extra_banner {
+            lines.push(String::new());
+        }
+        lines.push(String::new());
+        lines.push(String::new());
+    }
+
+    // ── Bottom sparkle ──
+    lines.push(build_sparkle_line(s, t, frame + 5, 52));
+
+    while lines.len() < target_lines {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+fn build_blender_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
+    let s = style();
+    let mut out = String::new();
+
+    for col in 0..20 {
+        // Diagonal vortex bands that shift each frame — creates a swirling effect
+        let band = (col + (row as usize) * 2 + frame * 3) % 10;
+
+        let ch = match band {
+            0 | 5 => "╲",
+            1 | 6 => "▓",
+            2 | 7 => "█",
+            3 | 8 => "╱",
+            _ => "▒",
+        };
+
+        // Cycle through ALL sparkle colors (6 shades) for a vibrant blend
+        let color_idx = (frame.wrapping_mul(2)
+            .wrapping_add(col)
+            .wrapping_add((row as usize).wrapping_mul(3)))
+            % t.sparkle.len();
+
+        out.push_str(&s.paint(t.sparkle[color_idx], ch));
+    }
+    out
+}
+
 
 pub fn print_help_screen() {
     println!("{}", style().frame_title_for("help", "🍺", "brau"));
