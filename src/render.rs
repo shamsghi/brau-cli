@@ -103,6 +103,17 @@ const SWEEP_COLORS: [&str; 6] = [
     "38;5;220", "38;5;214", "38;5;228",
 ];
 
+// ── Charm animation sprites (themed per action) ─────────────────────
+const CHARM_SEARCH: [&str; 6]  = ["◇", "◈", "◆", "◈", "◇", "◈"];
+const CHARM_INSTALL: [&str; 5] = ["◦", "○", "◎", "●", "◉"];
+const CHARM_UNINSTALL: [&str; 5] = ["◉", "●", "◎", "○", "◦"];
+const CHARM_MAINT: [&str; 4]   = ["╲", "│", "╱", "─"];
+const CHARM_INFO: [&str; 4]    = ["◇", "◈", "◆", "◈"];
+const CHARM_SERVICE: [&str; 4] = ["✧", "✦", "✧", "✦"];
+const CHARM_TAP: [&str; 4]     = ["◁", "▷", "◁", "▷"];
+const CHARM_DEV: [&str; 4]     = ["⊕", "⊗", "⊕", "⊗"];
+const CHARM_GENERIC: [&str; 4] = ["·", ":", "·", ":"];
+
 #[derive(Clone, Copy)]
 pub enum CatalogWarmupKind {
     FirstRun,
@@ -914,24 +925,43 @@ fn style() -> Style {
     Style::detect()
 }
 
-fn play_motion_sequence(label: &str, target: &str, steps: &[&str], frame_ms: u64, enabled: bool) {
+fn play_motion_sequence(label: &str, target: &str, steps: &[&str], _frame_ms: u64, enabled: bool) {
     if !enabled || !style().should_animate() {
         return;
     }
 
+    let s = style();
     let mut stdout = io::stdout();
+    let sub_frames = 5usize;
+    let total_frames = steps.len() * sub_frames;
+    let ms = 55u64; // 55ms per frame → ~825ms for 3 steps
 
-    for (index, step) in steps.iter().enumerate() {
-        let line = style().motion_line(label, target, step, index + 1, steps.len());
+    for frame in 0..total_frames {
+        let step_idx = (frame / sub_frames).min(steps.len() - 1);
+        let step = steps[step_idx];
+        let line = s.charm_line(label, target, step, frame, total_frames);
         print!("\r\x1b[2K{line}");
         let _ = stdout.flush();
-        thread::sleep(Duration::from_millis(frame_ms));
+        thread::sleep(Duration::from_millis(ms));
     }
 
     print!("\r\x1b[2K");
     let _ = stdout.flush();
 }
 
+fn charm_sprites(label: &str) -> &'static [&'static str] {
+    match label {
+        "search" => &CHARM_SEARCH,
+        "install" => &CHARM_INSTALL,
+        "uninstall" => &CHARM_UNINSTALL,
+        "brew-maintenance" => &CHARM_MAINT,
+        "brew-info" => &CHARM_INFO,
+        "brew-services" => &CHARM_SERVICE,
+        "brew-tap" => &CHARM_TAP,
+        "brew-dev" => &CHARM_DEV,
+        _ => &CHARM_GENERIC,
+    }
+}
 
 
 fn print_catalog_warmup_note(kind: CatalogWarmupKind) {
@@ -1119,15 +1149,7 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
     }
 }
 
-#[derive(Clone, Copy)]
-struct MotionTheme {
-    left: &'static str,
-    right: &'static str,
-    fill: char,
-    empty: char,
-    icon: &'static str,
-    prefix: &'static str,
-}
+
 
 #[derive(Clone, Copy)]
 struct AccentPalette {
@@ -1228,27 +1250,67 @@ impl Style {
         self.bold_green("┃")
     }
 
-    fn motion_line(
+    fn charm_line(
         &self,
         label: &str,
         target: &str,
         step: &str,
-        index: usize,
+        frame: usize,
         total: usize,
     ) -> String {
-        let theme = self.motion_theme(label);
-        let filled = theme.fill.to_string().repeat(index);
-        let empty = theme.empty.to_string().repeat(total.saturating_sub(index));
-        let bar = format!("{}{}{}{}", theme.left, filled, empty, theme.right);
-        let content = if target.is_empty() {
-            format!("{bar} {} {}: {step}", theme.icon, theme.prefix)
+        if !self.enabled {
+            return if target.is_empty() {
+                format!("[{}/{}] {}", frame + 1, total, step)
+            } else {
+                format!("[{}/{}] {} · \"{}\"", frame + 1, total, step, target)
+            };
+        }
+
+        let sprites = charm_sprites(label);
+        let sprite = sprites[frame % sprites.len()];
+        let palette = self.palette(label);
+
+        // Animated spinning sprite with cycling color
+        let sprite_colored = self.motion_color(label, frame, sprite);
+
+        // Progress bar: [▰▰▰▱▱▱▱▱▱▱]
+        let bar_w = 10usize;
+        let filled = ((frame + 1) * bar_w) / total;
+        let empty = bar_w.saturating_sub(filled);
+        let bar = format!("[{}{}]", "▰".repeat(filled), "▱".repeat(empty));
+        let bar_colored = self.paint(palette.secondary, &bar);
+
+        // Step text
+        let step_colored = self.paint(palette.primary, step);
+
+        // Target (truncated for terminal fit)
+        let target_part = if target.is_empty() {
+            String::new()
         } else {
-            format!(
-                "{bar} {} {}: {step} for \"{target}\"",
-                theme.icon, theme.prefix
-            )
+            let max_t = 24usize;
+            let t = if target.chars().count() > max_t {
+                let mut s: String = target.chars().take(max_t - 2).collect();
+                s.push_str("..");
+                s
+            } else {
+                target.to_string()
+            };
+            format!(" {}", self.paint(palette.tertiary, &format!("\"{}\"" , t)))
         };
-        self.motion_color(label, index, &content)
+
+        // Shimmer trail: cycling colored particles
+        let trail_len = 4 + (frame % 4);
+        let mut trail = String::new();
+        for i in 0..trail_len {
+            let p = DUST_TRAIL[(frame + i) % DUST_TRAIL.len()];
+            let c = SWEEP_COLORS[(frame + i) % SWEEP_COLORS.len()];
+            trail.push_str(&format!("\x1b[{c}m{p}\x1b[0m"));
+        }
+
+        format!(
+            "  {} {} · {}{}  {}",
+            sprite_colored, bar_colored, step_colored, target_part, trail
+        )
     }
 
 
@@ -1363,90 +1425,7 @@ impl Style {
         self.paint(palette.primary, value)
     }
 
-    fn motion_theme(&self, label: &str) -> MotionTheme {
-        match label {
-            "catalog-build" => MotionTheme {
-                left: "{",
-                right: "}",
-                fill: '=',
-                empty: '.',
-                icon: "◍",
-                prefix: "catalog",
-            },
-            "search" => MotionTheme {
-                left: "[",
-                right: "]",
-                fill: '=',
-                empty: '.',
-                icon: "◌",
-                prefix: "search",
-            },
-            "install" => MotionTheme {
-                left: "{",
-                right: "}",
-                fill: '#',
-                empty: '.',
-                icon: "+",
-                prefix: "install",
-            },
-            "uninstall" => MotionTheme {
-                left: "<",
-                right: ">",
-                fill: '~',
-                empty: '.',
-                icon: "-",
-                prefix: "uninstall",
-            },
-            "brew-maintenance" => MotionTheme {
-                left: "(",
-                right: ")",
-                fill: '=',
-                empty: ':',
-                icon: ">",
-                prefix: "brew",
-            },
-            "brew-info" => MotionTheme {
-                left: "[",
-                right: "]",
-                fill: '-',
-                empty: '.',
-                icon: ":",
-                prefix: "brew",
-            },
-            "brew-services" => MotionTheme {
-                left: "{",
-                right: "}",
-                fill: '/',
-                empty: '.',
-                icon: "~",
-                prefix: "brew",
-            },
-            "brew-tap" => MotionTheme {
-                left: "<",
-                right: ">",
-                fill: 'o',
-                empty: '.',
-                icon: "=",
-                prefix: "brew",
-            },
-            "brew-dev" => MotionTheme {
-                left: "[",
-                right: "]",
-                fill: '^',
-                empty: '.',
-                icon: "*",
-                prefix: "brew",
-            },
-            _ => MotionTheme {
-                left: "[",
-                right: "]",
-                fill: '*',
-                empty: '.',
-                icon: ">",
-                prefix: "brew",
-            },
-        }
-    }
+
 
     fn motion_color(&self, label: &str, index: usize, value: &str) -> String {
         let code = match (label, index % 3) {
