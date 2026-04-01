@@ -14,12 +14,12 @@ const SEARCH_PRELUDE_STEPS: [&str; 3] = ["sifting names", "tasting aliases", "po
 const INSTALL_STEPS_FORMULA: [&str; 3] = [
     "warming the cellar",
     "lining up bottles",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const INSTALL_STEPS_CASK: [&str; 3] = [
     "warming the cellar",
     "folding the app bundle",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const INSTALL_STEPS_DRY_RUN: [&str; 3] = [
     "warming the cellar",
@@ -29,12 +29,12 @@ const INSTALL_STEPS_DRY_RUN: [&str; 3] = [
 const UNINSTALL_STEPS_FORMULA: [&str; 3] = [
     "checking linked files",
     "loosening the cellar grip",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const UNINSTALL_STEPS_CASK: [&str; 3] = [
     "checking app traces",
     "folding the bundle away",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const UNINSTALL_STEPS_DRY_RUN: [&str; 3] = [
     "checking linked files",
@@ -44,32 +44,32 @@ const UNINSTALL_STEPS_DRY_RUN: [&str; 3] = [
 const BREW_GENERIC_STEPS: [&str; 3] = [
     "straightening the counter",
     "lining up the next move",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const BREW_MAINTENANCE_STEPS: [&str; 3] = [
     "polishing the taproom",
     "tidying the cellar shelves",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const BREW_INSPECT_STEPS: [&str; 3] = [
     "reading the bottle labels",
     "sorting the package notes",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const BREW_SERVICE_STEPS: [&str; 3] = [
     "waking the service cart",
     "arranging launch labels",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const BREW_TAP_STEPS: [&str; 3] = [
     "checking the tap handles",
     "arranging the cask room",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const BREW_DEVELOPER_STEPS: [&str; 3] = [
     "clearing the workbench",
     "laying out the tool roll",
-    "handing off to brew",
+    "keeping pace with brew",
 ];
 const CATALOG_BUILD_STEPS: [&str; 4] = [
     "uncorking the formula shelf",
@@ -596,7 +596,7 @@ pub fn print_brew_command_banner(command: &str, args: &[String]) {
     println!();
     println!(
         "{}",
-        style().frame_footer_for(mood.label, "handing off to Homebrew")
+        style().frame_footer_for(mood.label, "keeping pace with Homebrew")
     );
     println!();
 }
@@ -1062,7 +1062,7 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
         "" => BrewCommandMood {
             label: "brew-generic",
             icon: "🍺",
-            subtitle: "Sending the next move straight to Homebrew with a little extra ceremony.",
+            subtitle: "Homebrew gets moving right away, with a little extra ceremony around it.",
             mood_line: "counter reset",
             steps: &BREW_GENERIC_STEPS,
         },
@@ -1083,7 +1083,7 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
         | "update-python-resources" => BrewCommandMood {
             label: "brew-maintenance",
             icon: "🧹",
-            subtitle: "Housekeeping commands get a warmer runway before Homebrew takes over.",
+            subtitle: "Housekeeping commands get a warmer live status line while Homebrew works.",
             mood_line: "cellar tidy",
             steps: &BREW_MAINTENANCE_STEPS,
         },
@@ -1093,7 +1093,7 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
         | "--cache" | "--repository" | "--env" | "--caskroom" | "--taps" => BrewCommandMood {
             label: "brew-info",
             icon: "🧭",
-            subtitle: "A softer prelude for the commands that inspect, list, and explain.",
+            subtitle: "A softer live status line while Homebrew inspects, lists, and explains.",
             mood_line: "notes and labels",
             steps: &BREW_INSPECT_STEPS,
         },
@@ -1101,14 +1101,14 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
             label: "brew-services",
             icon: "🪄",
             subtitle:
-                "Service commands get a little stage setup before the launch machinery kicks in.",
+                "Service commands get a little stage setup while the launch machinery is already moving.",
             mood_line: "service cart rolling",
             steps: &BREW_SERVICE_STEPS,
         },
         "tap" | "untap" | "tap-new" | "extract" => BrewCommandMood {
             label: "brew-tap",
             icon: "🚰",
-            subtitle: "Tap commands get a roomier handoff with a splash of extra color.",
+            subtitle: "Tap commands get a roomier live status line with a splash of extra color.",
             mood_line: "tap handles aligned",
             steps: &BREW_TAP_STEPS,
         },
@@ -1135,14 +1135,14 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
         | "docs" => BrewCommandMood {
             label: "brew-dev",
             icon: "🧰",
-            subtitle: "Developer-facing brew commands get a slightly more workshop-y entrance.",
+            subtitle: "Developer-facing brew commands get a slightly more workshop-y live status line.",
             mood_line: "tools laid out",
             steps: &BREW_DEVELOPER_STEPS,
         },
         _ => BrewCommandMood {
             label: "brew-generic",
             icon: "🍺",
-            subtitle: "Sending the next move straight to Homebrew with a little extra ceremony.",
+            subtitle: "Homebrew gets moving right away, with a little extra ceremony around it.",
             mood_line: "counter reset",
             steps: &BREW_GENERIC_STEPS,
         },
