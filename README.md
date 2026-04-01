@@ -24,17 +24,6 @@ Tired of [memorizing] exact package names or **getting errors** for simple typos
 </tr>
 </table>
 
-## 📋 Prerequisites
-
-Before installing `brau`, make sure you have:
-
-- **macOS** (Homebrew is macOS-only)
-- **Homebrew** — if you don't have it yet, install it with:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
 ## 🚀 Quick Install
 
 You can install `brau` directly via Homebrew using our custom tap! Just run:
@@ -46,6 +35,16 @@ brew tap shamsghi/brau-cli https://github.com/shamsghi/brau-cli
 ### 2. Install brau (HEAD-only formula, no release tags yet)
 ```bash
 brew install brau --HEAD
+```
+
+## 📋 Prerequisites
+
+Before installing `brau`, make sure you have:
+
+- **macOS** and **Homebrew** — if you don't have Homebrew yet, install it with:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
 ## 🎉 Why `brau`?
