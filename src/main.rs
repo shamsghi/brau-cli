@@ -4,10 +4,11 @@ mod render;
 mod search;
 
 use std::collections::HashSet;
+use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, ExitCode, ExitStatus, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -162,6 +163,17 @@ enum CatalogLoadReason {
     FirstRun,
     StaleRefresh,
     ManualRefresh,
+}
+
+#[derive(Clone, Copy)]
+enum OutputStream {
+    Stdout,
+    Stderr,
+}
+
+struct OutputChunk {
+    stream: OutputStream,
+    bytes: Vec<u8>,
 }
 
 impl BrewAction {
@@ -437,6 +449,169 @@ fn should_passthrough_default(
     Ok(false)
 }
 
+fn should_run_motion(motion: MotionSettings) -> bool {
+    if !motion.animations_enabled {
+        return false;
+    }
+
+    let is_terminal = io::stdout().is_terminal();
+    let no_color = env::var_os("NO_COLOR").is_some();
+    let clicolor_disabled = matches!(env::var("CLICOLOR"), Ok(value) if value == "0");
+    let dumb_term = matches!(env::var("TERM"), Ok(value) if value == "dumb");
+
+    is_terminal
+        && !no_color
+        && !clicolor_disabled
+        && !dumb_term
+        && env::var_os("BRAU_NO_ANIM").is_none()
+        && env::var_os("CI").is_none()
+}
+
+fn run_with_motion<T, W, A>(enabled: bool, work: W, animate: A) -> Result<T, String>
+where
+    T: Send,
+    W: FnOnce() -> T + Send,
+    A: FnOnce(),
+{
+    if !enabled {
+        return Ok(work());
+    }
+
+    thread::scope(|scope| {
+        let work_handle = scope.spawn(work);
+        animate();
+        work_handle
+            .join()
+            .map_err(|_| "A background task stopped unexpectedly.".to_string())
+    })
+}
+
+fn brew_command_display(args: &[String]) -> String {
+    if args.is_empty() {
+        "brew".to_string()
+    } else {
+        format!("brew {}", args.join(" "))
+    }
+}
+
+fn spawn_output_reader<R>(
+    mut reader: R,
+    stream: OutputStream,
+    sender: mpsc::Sender<OutputChunk>,
+) -> thread::JoinHandle<io::Result<()>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut buffer = [0u8; 8192];
+
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                return Ok(());
+            }
+
+            if sender
+                .send(OutputChunk {
+                    stream,
+                    bytes: buffer[..read].to_vec(),
+                })
+                .is_err()
+            {
+                return Ok(());
+            }
+        }
+    })
+}
+
+fn relay_output(receiver: mpsc::Receiver<OutputChunk>) -> Result<(), String> {
+    while let Ok(chunk) = receiver.recv() {
+        match chunk.stream {
+            OutputStream::Stdout => {
+                let mut stdout = io::stdout();
+                stdout
+                    .write_all(&chunk.bytes)
+                    .map_err(|error| format!("Failed to forward Homebrew stdout: {error}"))?;
+                stdout
+                    .flush()
+                    .map_err(|error| format!("Failed to flush Homebrew stdout: {error}"))?;
+            }
+            OutputStream::Stderr => {
+                let mut stderr = io::stderr();
+                stderr
+                    .write_all(&chunk.bytes)
+                    .map_err(|error| format!("Failed to forward Homebrew stderr: {error}"))?;
+                stderr
+                    .flush()
+                    .map_err(|error| format!("Failed to flush Homebrew stderr: {error}"))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn join_output_reader(
+    handle: thread::JoinHandle<io::Result<()>>,
+    label: &str,
+) -> Result<(), String> {
+    handle
+        .join()
+        .map_err(|_| format!("The Homebrew {label} reader stopped unexpectedly."))?
+        .map_err(|error| format!("Failed to read Homebrew {label}: {error}"))
+}
+
+fn run_brew_command<A>(
+    args: &[String],
+    motion: MotionSettings,
+    animate: A,
+) -> Result<ExitStatus, String>
+where
+    A: FnOnce(),
+{
+    if !should_run_motion(motion) {
+        return Command::new("brew")
+            .args(args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .map_err(|error| format!("Failed to launch Homebrew: {error}"));
+    }
+
+    let mut child = Command::new("brew")
+        .args(args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to launch Homebrew: {error}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture Homebrew stdout.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture Homebrew stderr.".to_string())?;
+
+    let (sender, receiver) = mpsc::channel();
+    let stdout_reader = spawn_output_reader(stdout, OutputStream::Stdout, sender.clone());
+    let stderr_reader = spawn_output_reader(stderr, OutputStream::Stderr, sender);
+
+    animate();
+    relay_output(receiver)?;
+    let status = child
+        .wait()
+        .map_err(|error| format!("Failed to wait for Homebrew: {error}"))?;
+
+    join_output_reader(stdout_reader, "stdout")?;
+    join_output_reader(stderr_reader, "stderr")?;
+
+    Ok(status)
+}
+
 fn run_search(
     catalog: &Catalog,
     query: &str,
@@ -444,9 +619,11 @@ fn run_search(
     limit: usize,
     motion: MotionSettings,
 ) -> Result<(), String> {
-    let matches = search_catalog(catalog, query, SearchOptions { scope, limit });
-
-    render::play_search_charm(query, motion.animations_enabled);
+    let matches = run_with_motion(
+        should_run_motion(motion),
+        || search_catalog(catalog, query, SearchOptions { scope, limit }),
+        || render::play_search_charm(query, motion.animations_enabled),
+    )?;
     render::print_search_results(query, &matches);
 
     if matches.is_empty() {
@@ -464,13 +641,16 @@ fn run_info(
     scope: QueryScope,
     motion: MotionSettings,
 ) -> Result<(), String> {
-    let matches = search_catalog(catalog, query, SearchOptions { scope, limit: 5 });
+    let matches = run_with_motion(
+        should_run_motion(motion),
+        || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
+        || render::play_search_charm(query, motion.animations_enabled),
+    )?;
 
     let best = matches
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
 
-    render::play_search_charm(query, motion.animations_enabled);
     render::print_package_detail(best.package);
 
     if matches.len() > 1 {
@@ -497,13 +677,15 @@ fn run_action(
     motion: MotionSettings,
     action: BrewAction,
 ) -> Result<(), String> {
-    let matches = search_catalog(catalog, query, SearchOptions { scope, limit: 5 });
+    let matches = run_with_motion(
+        should_run_motion(motion),
+        || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
+        || render::play_search_charm(query, motion.animations_enabled),
+    )?;
 
     let best = matches
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
-
-    render::play_search_charm(query, motion.animations_enabled);
     let confident = is_confident(best, matches.get(1));
 
     if yes {
@@ -566,22 +748,17 @@ fn execute_brew_action(
     }
     args.push(package.install_target().to_string());
 
-    render::play_brew_action_charm(package, action.label(), dry_run, motion.animations_enabled);
-
     if dry_run {
+        render::play_brew_action_charm(package, action.label(), dry_run, motion.animations_enabled);
         println!("Dry run: brew {}", args.join(" "));
         return Ok(());
     }
 
-    eprintln!("Running: brew {}", args.join(" "));
+    eprintln!("Running: {}", brew_command_display(&args));
 
-    let status = Command::new("brew")
-        .args(&args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|error| format!("Failed to launch Homebrew: {error}"))?;
+    let status = run_brew_command(&args, motion, move || {
+        render::play_brew_action_charm(package, action.label(), dry_run, motion.animations_enabled);
+    })?;
 
     if status.success() {
         if action.should_celebrate() && motion.finale_enabled {
@@ -603,24 +780,13 @@ fn run_brew_passthrough(args: &[String], motion: MotionSettings) -> Result<(), S
     let trailing = if args.len() > 1 { &args[1..] } else { &[][..] };
 
     render::print_brew_command_banner(command, trailing);
-    render::play_brew_command_charm(command, trailing, motion.animations_enabled);
+    eprintln!("Running: {}", brew_command_display(args));
 
-    eprintln!(
-        "Running: {}",
-        if args.is_empty() {
-            "brew".to_string()
-        } else {
-            format!("brew {}", args.join(" "))
-        }
-    );
-
-    let status = Command::new("brew")
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|error| format!("Failed to launch Homebrew: {error}"))?;
+    let command_owned = command.to_string();
+    let trailing_owned = trailing.to_vec();
+    let status = run_brew_command(args, motion, move || {
+        render::play_brew_command_charm(&command_owned, &trailing_owned, motion.animations_enabled);
+    })?;
 
     render::print_brew_command_footer(
         if command.is_empty() { "help" } else { command },
