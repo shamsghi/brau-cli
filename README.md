@@ -3,16 +3,21 @@
 ## **The Homebrew companion that actually installs what you meant.**
 <table>
 <tr>
-<td width="55%">
+<td width="50%">
 
 Tired of memorizing exact package names or getting errors for simple typos?
 
-`brau` is a cozy wrapper around Homebrew that guesses what you *actually* meant. It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
+
+`brau` is a **cozy wrapper** around _Homebrew_ that [guesses] what you *actually* $$meant$$. 
+
+It searches, it spell-checks, it installs, and it makes your terminal look good doing it. ✨
+
 
 *(And yes, it is written in Rust. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
 
+
 </td>
-<td width="70%">
+<td width="45%">
 
 <img src="https://github.com/user-attachments/assets/35e3b310-5fe3-4bb0-af0d-f286923aaad0" alt="demo" />
 
