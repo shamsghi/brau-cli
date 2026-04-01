@@ -19,7 +19,8 @@ It searches, it spell-checks, it installs, and it makes your terminal look good 
 </td>
 <td width="45%">
 
-<img src="https://github.com/user-attachments/assets/35e3b310-5fe3-4bb0-af0d-f286923aaad0" alt="demo" />
+<img src="https://github.com/user-attachments/assets/87f958cb-6a2b-411d-a658-9a086cf6751c" alt="demo" />
+
 
 </td>
 </tr>
