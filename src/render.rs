@@ -3,6 +3,9 @@ use std::io::{self, IsTerminal, Write};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
 use crate::catalog::{Package, PackageKind};
 use crate::search::SearchMatch;
 
@@ -85,6 +88,21 @@ const CATALOG_WARMUP_MIN_WIDTH: usize = 52;
 const HONEY_HUES: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;228"];
 const TEAL_HUES: [&str; 2] = ["38;5;73", "38;5;109"];
 
+// ── Broom sweep animation frames ─────────────────────────────────────
+const BROOM_FRAMES: [&str; 4] = [
+    "/|\\.",
+    "/|\\.:",
+    "/|\\.:·",
+    "/|\\.:·˚",
+];
+const DUST_TRAIL: [&str; 8] = [
+    "·", "˚", "∘", "✦", "·", "˚", "∘", ".",
+];
+const SWEEP_COLORS: [&str; 6] = [
+    "38;5;223", "38;5;222", "38;5;221",
+    "38;5;220", "38;5;214", "38;5;228",
+];
+
 #[derive(Clone, Copy)]
 pub enum CatalogWarmupKind {
     FirstRun,
@@ -121,38 +139,25 @@ pub fn draw_catalog_warmup_tick(
         return;
     }
 
+    let s = style();
     let spec = catalog_warmup_spec(kind);
     let step_index = tick % spec.steps.len();
-    let footer = format!("{} elapsed · {}", format_elapsed(elapsed), spec.footer_hint);
+    let step = spec.steps[step_index];
+    let time = format_elapsed(elapsed);
 
-    if tick == 0 {
-        print!("\x1b7"); // save cursor position before first draw
-    } else {
-        print!("\x1b8\x1b[0J"); // restore saved cursor, clear everything below
-    }
-
-    let lines = [
-        style().frame_title_for(spec.label, spec.icon, spec.title),
-        style().body(spec.subtitle),
-        style().catalog_pour_line(spec.label, spec.steps[step_index], tick),
-        style().frame_footer_for(spec.label, &footer),
-    ];
+    // Build the broom sweep animation on a single line
+    let line = s.broom_sweep_line(spec.icon, step, &time, tick);
 
     let mut stdout = io::stdout();
-    for (index, line) in lines.iter().enumerate() {
-        print!("\r\x1b[2K{line}");
-        if index + 1 < lines.len() {
-            print!("\n");
-        }
-    }
-
+    print!("\r\x1b[2K{line}");
     let _ = stdout.flush();
 }
 
 pub fn finish_catalog_warmup(enabled: bool) {
     if enabled && style().should_animate() {
-        println!();
-        println!();
+        // Clear the animation line and move to next line
+        print!("\r\x1b[2K");
+        let _ = io::stdout().flush();
     }
 }
 
@@ -1246,40 +1251,6 @@ impl Style {
         self.motion_color(label, index, &content)
     }
 
-    fn catalog_pour_line(&self, label: &str, step: &str, tick: usize) -> String {
-        if label == "catalog-build" {
-            return self.catalog_pour_track(step, tick);
-        }
-
-        let palette = self.palette(label);
-        let fill = (tick % 8) + 1;
-        let stream = match tick % 4 {
-            0 => ".",
-            1 => ".:",
-            2 => ".::",
-            _ => ".:::",
-        };
-        let bubble = match tick % 4 {
-            0 => "°",
-            1 => "o",
-            2 => "°",
-            _ => ".",
-        };
-        let mug = format!(
-            "[{}{}]",
-            "▓".repeat(fill),
-            "░".repeat(8usize.saturating_sub(fill))
-        );
-
-        format!(
-            "{}{}{}{}{}",
-            self.paint(palette.tertiary, &format!("  tap ))> {stream} {bubble}  ")),
-            self.paint(palette.secondary, &format!("{mug} ")),
-            self.paint(palette.primary, "🍺 "),
-            self.paint(palette.secondary, "· "),
-            self.paint(palette.primary, step)
-        )
-    }
 
     fn meta_label(&self, label: &str) -> String {
         let padded = format!("{label:>13}:");
@@ -1673,90 +1644,6 @@ impl Style {
         )
     }
 
-    fn catalog_pour_track(&self, step: &str, tick: usize) -> String {
-        let fill = (tick % 8) + 1;
-        let stream = match tick % 4 {
-            0 => ".",
-            1 => ".:",
-            2 => ".::",
-            _ => ".:::",
-        };
-        let bubble = match tick % 4 {
-            0 => "°",
-            1 => "o",
-            2 => "°",
-            _ => ".",
-        };
-        let prefix = format!("tap ))> {stream} {bubble}");
-        let mug = self.catalog_mug(fill, tick);
-        let lead_plain = format!("{prefix}  [00000000] ");
-        let icon_plain = "🍺 ";
-        let separator_plain = "· ";
-        let min_trail = 4usize;
-        let total_reserved = self.visible_width(&lead_plain)
-            + self.visible_width(icon_plain)
-            + self.visible_width(separator_plain)
-            + min_trail;
-        let width = self.catalog_card_width();
-        let step_width = width.saturating_sub(total_reserved);
-        let step = self.truncate_plain(step, step_width);
-        let used = self.visible_width(&prefix)
-            + 2
-            + 10
-            + self.visible_width(icon_plain)
-            + self.visible_width(separator_plain)
-            + self.visible_width(&step)
-            + 1;
-        let trail_len = width.saturating_sub(used).max(min_trail);
-        let trail = self.catalog_stream_tail(tick, trail_len);
-
-        format!(
-            "{}  {}{}{}{}",
-            self.catalog_sunwash(&prefix, tick + 1),
-            mug,
-            self.paint("1;38;5;223", "🍺 "),
-            self.paint("38;5;109", "· "),
-            self.catalog_step_and_tail(&step, &trail, tick)
-        )
-    }
-
-    fn catalog_step_and_tail(&self, step: &str, tail: &str, tick: usize) -> String {
-        format!(
-            "{} {}",
-            self.paint("1;38;5;223", step),
-            self.catalog_sunwash(tail, tick + 11)
-        )
-    }
-
-    fn catalog_mug(&self, fill: usize, tick: usize) -> String {
-        if !self.enabled {
-            return format!(
-                "[{}{}]",
-                "▓".repeat(fill),
-                "░".repeat(8usize.saturating_sub(fill))
-            );
-        }
-
-        let mut out = String::new();
-        out.push_str(&self.paint(TEAL_HUES[tick % TEAL_HUES.len()], "["));
-        for index in 0..fill {
-            out.push_str(&self.paint(HONEY_HUES[(tick + index) % HONEY_HUES.len()], "▓"));
-        }
-        for index in fill..8 {
-            out.push_str(&self.paint(TEAL_HUES[(tick + index) % TEAL_HUES.len()], "░"));
-        }
-        out.push_str(&self.paint(TEAL_HUES[(tick + 1) % TEAL_HUES.len()], "]"));
-        out.push(' ');
-        out
-    }
-
-    fn catalog_stream_tail(&self, tick: usize, len: usize) -> String {
-        let pattern = ['-', '~', '=', ':'];
-        (0..len)
-            .map(|index| pattern[(tick + index) % pattern.len()])
-            .collect()
-    }
-
     fn catalog_sunwash(&self, value: &str, seed: usize) -> String {
         if !self.enabled {
             return value.to_string();
@@ -1820,4 +1707,124 @@ impl Style {
     fn visible_width(&self, value: &str) -> usize {
         value.chars().count()
     }
+
+    /// Build a single-line broom sweep animation for catalog warmup.
+    ///
+    /// Layout:  🧭 /|\.:·˚  dusting off the shelf map  ·˚∘·˚∘  3s
+    ///
+    /// The broom sweeps through dust particles that shimmer with color,
+    /// and the whole thing fits on one terminal line.
+    fn broom_sweep_line(&self, icon: &str, step: &str, time: &str, tick: usize) -> String {
+        if !self.enabled {
+            return format!("{icon} {step} ({time})");
+        }
+
+        let width = terminal_width();
+
+        // Broom frame cycles through sweep positions
+        let broom_frame = BROOM_FRAMES[tick % BROOM_FRAMES.len()];
+
+        // Build dust trail: a shimmering sequence of particles
+        let trail_len = 6 + (tick % 4);
+        let mut dust = String::new();
+        for i in 0..trail_len {
+            let particle = DUST_TRAIL[(tick + i) % DUST_TRAIL.len()];
+            let color = SWEEP_COLORS[(tick + i) % SWEEP_COLORS.len()];
+            dust.push_str(&format!("\x1b[{color}m{particle}\x1b[0m"));
+        }
+
+        // Time display
+        let time_display = self.paint("38;5;109", &format!(" {time}"));
+
+        // Icon
+        let icon_part = if self.fancy { format!("{icon} ") } else { String::new() };
+
+        // Colorful broom
+        let broom_colored = self.paint_broom(broom_frame, tick);
+
+        // Step text with warm color
+        let step_colored = self.paint("1;38;5;223", step);
+
+        // Calculate visible widths
+        // icon(2) + broom(~6) + space(1) + step + space(1) + dust(~8) + time(~5)
+        let icon_w = if self.fancy { 3 } else { 0 }; // emoji + space
+        let broom_w = broom_frame.chars().count();
+        let step_w = step.chars().count();
+        let time_w = time.chars().count() + 1; // space + time
+        let separators_w = 4; // spaces between parts
+
+        let used = icon_w + broom_w + step_w + time_w + separators_w + trail_len;
+
+        if used > width {
+            // Compact mode: just icon + step + time
+            return format!(
+                "{}{}  {}",
+                icon_part, step_colored, time_display
+            );
+        }
+
+        format!(
+            "{}{}  {}  {}{}",
+            icon_part,
+            broom_colored,
+            step_colored,
+            dust,
+            time_display
+        )
+    }
+
+    /// Paint the broom characters with cycling warm colors.
+    fn paint_broom(&self, frame: &str, tick: usize) -> String {
+        if !self.enabled {
+            return frame.to_string();
+        }
+        let mut out = String::new();
+        let broom_colors = ["1;38;5;180", "1;38;5;222", "1;38;5;214", "1;38;5;215"];
+        for (i, ch) in frame.chars().enumerate() {
+            let color = broom_colors[(tick + i) % broom_colors.len()];
+            out.push_str(&format!("\x1b[{color}m{ch}\x1b[0m"));
+        }
+        out
+    }
+}
+
+/// Get the actual terminal width. Uses ioctl on Unix, falls back to
+/// COLUMNS env var, then to 80.
+fn terminal_width() -> usize {
+    #[cfg(unix)]
+    {
+        #[repr(C)]
+        struct Winsize {
+            ws_row: u16,
+            ws_col: u16,
+            ws_xpixel: u16,
+            ws_ypixel: u16,
+        }
+
+        extern "C" {
+            fn ioctl(fd: i32, request: u64, ...) -> i32;
+        }
+
+        // TIOCGWINSZ on macOS = 0x40087468
+        const TIOCGWINSZ: u64 = 0x40087468;
+
+        let mut ws = Winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+
+        let fd = io::stdout().as_raw_fd();
+        let ret = unsafe { ioctl(fd, TIOCGWINSZ, &mut ws as *mut Winsize) };
+        if ret == 0 && ws.ws_col > 0 {
+            return ws.ws_col as usize;
+        }
+    }
+
+    // Fallback: COLUMNS env var, then 80
+    env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(80)
 }
