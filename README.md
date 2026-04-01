@@ -6,7 +6,7 @@
 <td width="50%">
 
 Tired of memorizing exact package names or getting errors for simple typos?
-
+🤔
 
 `brau` is a **cozy wrapper** around _Homebrew_ that [guesses] what you *actually* $$meant$$. 
 
