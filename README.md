@@ -7,12 +7,6 @@
 
 `brau` is a drop-in replacement for `brew` that adds fuzzy search 🔍, typo correction, acronym matching, batch installs 🍹, terminal animations 🎉, and a cleaner install flow — all without changing how you already work.
 
-**Why people use `brau`:**
-- Corrects package intent (`postgres` → `postgresql`)
-- Understands acronyms (`vsc`)
-- Handles batch installs (`ripgrep, bat, fd`)
-- Adds fun, polished terminal animations 🎉
-
 **Quick examples:** `brau install postgres` · `brau install vsc` · `brau install ripgrep, bat, fd`
 
 Every `brew` command you already know still works in `brau`.
