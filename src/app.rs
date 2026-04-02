@@ -83,14 +83,15 @@ fn create_bro_alias_for(executable_path: &Path) -> Result<BroAliasStatus, String
         )
     })?;
     let alias_path = executable_path.with_file_name(ALIAS_BINARY_NAME);
+    let display_path = normalized_display_path(&alias_path);
 
     if executable_name == OsStr::new(ALIAS_BINARY_NAME) {
-        return Ok(BroAliasStatus::AlreadyAvailable(alias_path));
+        return Ok(BroAliasStatus::AlreadyAvailable(display_path));
     }
 
     if fs::symlink_metadata(&alias_path).is_ok() {
         if alias_points_to_same_executable(&alias_path, executable_path)? {
-            return Ok(BroAliasStatus::AlreadyAvailable(alias_path));
+            return Ok(BroAliasStatus::AlreadyAvailable(display_path));
         }
 
         return Err(format!(
@@ -109,13 +110,27 @@ fn create_bro_alias_for(executable_path: &Path) -> Result<BroAliasStatus, String
                 alias_path.display()
             )
         })?;
-        Ok(BroAliasStatus::Created(alias_path))
+        Ok(BroAliasStatus::Created(display_path))
     }
 
     #[cfg(not(unix))]
     {
         let _ = link_target;
         Err("The `bro` alias easter egg is only available on Unix-like systems.".to_string())
+    }
+}
+
+fn normalized_display_path(path: &Path) -> PathBuf {
+    let Some(file_name) = path.file_name() else {
+        return path.to_path_buf();
+    };
+
+    match path.parent() {
+        Some(parent) => match fs::canonicalize(parent) {
+            Ok(parent) => parent.join(file_name),
+            Err(_) => path.to_path_buf(),
+        },
+        None => path.to_path_buf(),
     }
 }
 
@@ -145,7 +160,9 @@ fn alias_points_to_same_executable(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_bro_alias_for, is_hidden_easter_egg_command, BroAliasStatus};
+    use super::{
+        create_bro_alias_for, is_hidden_easter_egg_command, normalized_display_path, BroAliasStatus,
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process;
@@ -203,7 +220,10 @@ mod tests {
         fs::write(&executable_path, "brau").expect("executable placeholder should be written");
 
         let status = create_bro_alias_for(&executable_path).expect("alias should be created");
-        assert_eq!(status, BroAliasStatus::Created(temp_dir.path().join("bro")));
+        assert_eq!(
+            status,
+            BroAliasStatus::Created(normalized_display_path(&temp_dir.path().join("bro")))
+        );
         assert_eq!(
             fs::read_link(temp_dir.path().join("bro")).expect("symlink target should be readable"),
             PathBuf::from("brau")
@@ -220,7 +240,10 @@ mod tests {
         symlink("brau", &alias_path).expect("alias should be created");
 
         let status = create_bro_alias_for(&executable_path).expect("alias should already exist");
-        assert_eq!(status, BroAliasStatus::AlreadyAvailable(alias_path));
+        assert_eq!(
+            status,
+            BroAliasStatus::AlreadyAvailable(normalized_display_path(&alias_path))
+        );
     }
 
     #[cfg(unix)]

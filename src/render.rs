@@ -73,6 +73,21 @@ const BREW_DEVELOPER_STEPS: [&str; 3] = [
     "laying out the tool roll",
     "keeping pace with brew",
 ];
+const BRO_ALIAS_ART: [&str; 5] = [
+    r" ____   ____    ___  ",
+    r"| __ ) |  _ \  / _ \ ",
+    r"|  _ \ | |_) || | | |",
+    r"| |_) ||  _ < | |_| |",
+    r"|____/ |_| \_\ \___/ ",
+];
+const BRO_ALIAS_PALETTE: [&str; 6] = [
+    "1;38;5;221",
+    "1;38;5;215",
+    "1;38;5;183",
+    "1;38;5;147",
+    "1;38;5;109",
+    "1;38;5;150",
+];
 const CATALOG_BUILD_STEPS: [&str; 4] = [
     "uncorking the formula shelf",
     "walking the cask room",
@@ -1014,6 +1029,54 @@ pub fn print_help_screen() {
         "{}",
         style().frame_footer_for("help", &format!("{app_name} help"))
     );
+    println!();
+}
+
+pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
+    let s = style();
+    let (title, subtitle, status, footer) = if already_available {
+        (
+            "Mustache Already Applied",
+            "`bro` was already hanging around in your cellar, leaning on the kegs like it pays rent.",
+            "The disguise is already on. No second fake mustache required.",
+            "same bottle, same stunt double",
+        )
+    } else {
+        (
+            "Secret Menu Unlocked",
+            "Brau put on sunglasses, lowered its voice half an octave, and now answers to `bro`.",
+            "Your terminal now has a slightly more suspicious twin binary.",
+            "same bottle, different mustache",
+        )
+    };
+
+    println!("{}", s.frame_title_for("brew-generic", "🕶", title));
+    println!("{}", s.body(subtitle));
+    println!();
+
+    for (index, line) in BRO_ALIAS_ART.iter().enumerate() {
+        println!(
+            "{}",
+            s.paint_finale_gradient(line, &BRO_ALIAS_PALETTE, index)
+        );
+    }
+
+    println!();
+    println!("{} {}", s.meta_label("alias"), s.token("bro"));
+    println!("{} {}", s.meta_label("where"), s.body(path));
+    println!(
+        "{} {}",
+        s.meta_label("works"),
+        s.body("Any brau command, now with a backup personality.")
+    );
+    println!(
+        "{} {}",
+        s.meta_label("try"),
+        s.token("bro update  ·  bro install google chrome  ·  bro info ripgrep")
+    );
+    println!();
+    println!("{}", s.status_frame("success", "✓", status));
+    println!("{}", s.frame_footer_for("brew-generic", footer));
     println!();
 }
 

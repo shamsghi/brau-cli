@@ -484,28 +484,12 @@ fn expected_catalog_load_reason(force_refresh: bool) -> Result<Option<CatalogLoa
 fn unlock_bro_alias() -> Result<(), String> {
     match app::unlock_bro_alias()? {
         BroAliasStatus::Created(path) => {
-            println!(
-                "Unlocked `{}` at {}.",
-                app::ALIAS_BINARY_NAME,
-                path.display()
-            );
-            println!(
-                "You can now run `{}` anywhere you would normally run `{}`.",
-                app::ALIAS_BINARY_NAME,
-                app::DEFAULT_BINARY_NAME
-            );
+            let path = path.display().to_string();
+            render::print_bro_alias_unlock(&path, false);
         }
         BroAliasStatus::AlreadyAvailable(path) => {
-            println!(
-                "`{}` is already ready at {}.",
-                app::ALIAS_BINARY_NAME,
-                path.display()
-            );
-            println!(
-                "Try `{}` or any other `{}` command.",
-                format!("{} install chrome", app::ALIAS_BINARY_NAME),
-                app::DEFAULT_BINARY_NAME
-            );
+            let path = path.display().to_string();
+            render::print_bro_alias_unlock(&path, true);
         }
     }
 
