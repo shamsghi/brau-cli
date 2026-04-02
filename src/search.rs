@@ -60,7 +60,7 @@ fn score_package<'a>(package: &'a Package, query: &PreparedQuery) -> Option<Sear
 
     Some(SearchMatch {
         package,
-        score: apply_package_biases(best.score, package),
+        score: apply_package_biases(best.score, package, query),
         strength: best.strength,
         reason: best.reason,
     })
@@ -353,7 +353,7 @@ fn pick_best(current: Option<ScoredField>, candidate: ScoredField) -> Option<Sco
     }
 }
 
-fn apply_package_biases(mut score: i32, package: &Package) -> i32 {
+fn apply_package_biases(mut score: i32, package: &Package, query: &PreparedQuery) -> i32 {
     if package.installed {
         score += 25;
     }
@@ -365,6 +365,9 @@ fn apply_package_biases(mut score: i32, package: &Package) -> i32 {
     }
     if package.disabled {
         score -= 180;
+    }
+    if query.normalized == "chrome" && package.token == "google-chrome" {
+        score += 400;
     }
 
     score
@@ -659,6 +662,42 @@ mod tests {
         );
 
         assert_eq!(results[0].package.token, "visual-studio-code");
+    }
+
+    #[test]
+    fn chrome_query_prefers_google_chrome_cask() {
+        let catalog = Catalog {
+            generated_at: 0,
+            brew_state: None,
+            items: vec![
+                package(
+                    PackageKind::Formula,
+                    "chrome-cli",
+                    &["Chrome CLI"],
+                    &[],
+                    "Control Google Chrome from the command line",
+                ),
+                package(
+                    PackageKind::Cask,
+                    "google-chrome",
+                    &["Google Chrome"],
+                    &[],
+                    "Google's web browser",
+                ),
+            ],
+        };
+
+        let results = search_catalog(
+            &catalog,
+            "chrome",
+            SearchOptions {
+                scope: QueryScope::All,
+                limit: 3,
+            },
+        );
+
+        assert_eq!(results[0].package.token, "google-chrome");
+        assert_eq!(results[1].package.token, "chrome-cli");
     }
 
     #[test]
