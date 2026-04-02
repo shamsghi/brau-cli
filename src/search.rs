@@ -366,7 +366,8 @@ fn apply_package_biases(mut score: i32, package: &Package, query: &PreparedQuery
     if package.disabled {
         score -= 180;
     }
-    if query.normalized == "chrome" && package.token == "google-chrome" {
+    if matches!(query.normalized.as_str(), "chrome" | "chrom") && package.token == "google-chrome"
+    {
         score += 400;
     }
 
@@ -690,6 +691,42 @@ mod tests {
         let results = search_catalog(
             &catalog,
             "chrome",
+            SearchOptions {
+                scope: QueryScope::All,
+                limit: 3,
+            },
+        );
+
+        assert_eq!(results[0].package.token, "google-chrome");
+        assert_eq!(results[1].package.token, "chrome-cli");
+    }
+
+    #[test]
+    fn chrom_query_prefers_google_chrome_cask() {
+        let catalog = Catalog {
+            generated_at: 0,
+            brew_state: None,
+            items: vec![
+                package(
+                    PackageKind::Formula,
+                    "chrome-cli",
+                    &["Chrome CLI"],
+                    &[],
+                    "Control Google Chrome from the command line",
+                ),
+                package(
+                    PackageKind::Cask,
+                    "google-chrome",
+                    &["Google Chrome"],
+                    &[],
+                    "Google's web browser",
+                ),
+            ],
+        };
+
+        let results = search_catalog(
+            &catalog,
+            "chrom",
             SearchOptions {
                 scope: QueryScope::All,
                 limit: 3,

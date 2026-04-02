@@ -1,46 +1,21 @@
 # 🍻 brau — A Smarter Homebrew Experience
 
-<table>
-<tr>
-<td width="48%">
-
 ### The Homebrew wrapper that actually understands you.
 
-`brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and beautiful terminal animations — all without changing how you already work.
+`brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and a cleaner install flow — all without changing how you already work.
 
-Just type what you mean and `brau` figures out the rest.
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="860" />
+</p>
 
-```bash
-brau install postgres          # Installs postgresql ✓
-brau install vsc  # Installs visual-studio-code ✓
-brau install ripgrep, bat, fd  # All three, at once ✓
-```
+**Why people use `brau`:**
+- Corrects package intent (`postgres` → `postgresql`)
+- Understands acronyms (`vsc`)
+- Handles batch installs (`ripgrep, bat, fd`)
 
-Every `brew` command you already know works with `brau` — just with a much better experience on top.
+**Quick examples:** `brau install postgres` · `brau install vsc` · `brau install ripgrep, bat, fd`
 
-</td>
-<td width="52%">
-
-<img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" />
-
-</td>
-
-</tr>
-</table>
-
----
-
-## ✨ Why brau?
-
-Homebrew is great. But its search can be unforgiving — a small typo returns an error, acronyms go unrecognized, and installing multiple packages means running the same command over and over.
-
-`brau` solves all of that:
-
-- 🔍 **Fuzzy search** — typos, partial names, and acronyms all resolve to the right package
-- ⚡ **Instant results** — searches a local cache instead of hitting the network every time
-- 📦 **Search formulas and casks together** — no need to remember which flag to use
-- 🍹 **Batch installs** — install (or uninstall) multiple packages in one command (with fuzzy search)
-- 🎉 **Delightful animations** — your terminal deserves a little personality
+Every `brew` command you already know still works in `brau`.
 
 ---
 
@@ -77,7 +52,7 @@ brau node                  # Searches both formulas and casks at once
 
 **Install & uninstall:**
 ```bash
-brau install pg            # Fuzzy-matches and installs postgresql
+brau install chrom         # Fuzzy-matches and installs chrome browser
 brau install node -y       # Skip the confirmation prompt
 brau uninstall postgresql  # Clean removal
 ```
@@ -106,7 +81,7 @@ brau doctor
 | Typo in package name | ❌ Error | ✅ Corrected automatically |
 | Search speed | 🐢 Network request | ⚡ Local cache |
 | Formula + cask search | Requires separate flags | ✅ Unified by default |
-| Acronym search (`pg`, `vsc`) | ❌ No results | ✅ Resolves to full package names |
+| Acronym search (`vsc`) | ❌ No results | ✅ Resolves to full package names |
 | Renamed / aliased packages | ❌ Not found | ✅ Matched via aliases |
 | Batch install | One package at a time | ✅ Comma-separated list |
 | All standard brew commands | ✅ | ✅ Passed through natively |
@@ -172,7 +147,7 @@ cargo test
 **Try it out**
 ```bash
 cargo run -- postgres       # Should return fuzzy-matched results for postgresql
-cargo run -- install pg -y  # End-to-end: resolves, confirms, and hands off to brew
+cargo run -- install postgres -y  # End-to-end: resolves, confirms, and hands off to brew
 ```
 
 **Before committing, make sure your code is formatted and lint-clean**
