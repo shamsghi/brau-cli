@@ -183,7 +183,7 @@ impl Cli {
         let binary_name = app::display_name();
 
         format!(
-            "{binary_name} 0.1.0
+            "{binary_name} v2.0.0
 
 Fuzzy search Homebrew formulae and casks, show richer package details,
 and install matches directly from inside the CLI.
