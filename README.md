@@ -21,9 +21,10 @@ Every `brew` command you already know works with `brau` — just with a much bet
 </td>
 <td width="48%">
 
-<img src="https://github.com/user-attachments/assets/87f958cb-6a2b-411d-a658-9a086cf6751c" alt="brau demo" />
+<img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" />
 
 </td>
+
 </tr>
 </table>
 
