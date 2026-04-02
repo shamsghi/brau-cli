@@ -41,7 +41,7 @@ brew install --HEAD shamsghi/brau-cli/brau
 
 ## 🪄 Usage
 
-`brau` works exactly like `brew` — same commands, same flags — just smarter.
+`brau` works exactly like `brew` — same commands, same flags,,just smarter.
 
 **Search for packages:**
 ```bash
