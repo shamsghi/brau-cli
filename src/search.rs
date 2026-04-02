@@ -366,8 +366,7 @@ fn apply_package_biases(mut score: i32, package: &Package, query: &PreparedQuery
     if package.disabled {
         score -= 180;
     }
-    if matches!(query.normalized.as_str(), "chrome" | "chrom") && package.token == "google-chrome"
-    {
+    if matches!(query.normalized.as_str(), "chrome" | "chrom") && package.token == "google-chrome" {
         score += 400;
     }
 

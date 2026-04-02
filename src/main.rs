@@ -1,161 +1,34 @@
 mod app;
+mod brew;
 mod catalog;
 mod cli;
+mod motion;
+mod prompt;
 mod render;
 mod search;
 
-use std::collections::HashSet;
-use std::env;
-use std::fs;
-use std::io::{self, IsTerminal, Read, Write};
-use std::path::PathBuf;
-use std::process::{Command, ExitCode, ExitStatus, Stdio};
+use std::io::{self, IsTerminal};
+use std::process::ExitCode;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use app::BroAliasStatus;
+use brew::{brew_command_display, refresh_brew_command_cache, run_brew_command};
 use catalog::{CacheStatus, Catalog, CatalogLoad, CatalogLoadSource, Package, PackageKind};
 use cli::{Cli, CommandKind, QueryScope};
+use motion::{run_with_motion, should_run_motion, MotionSettings};
+use prompt::{
+    prompt_batch_retry_selection, prompt_batch_review_choice, prompt_confirmed_match_choice,
+    prompt_match_selection, prompt_match_selection_choice, prompt_yes_no, BatchReviewChoice,
+    ConfirmedMatchChoice, MatchSelection,
+};
 use render::CatalogWarmupKind;
 use search::{search_catalog, MatchStrength, SearchMatch, SearchOptions};
 
-const BREW_COMMAND_CACHE_FILE: &str = "brew-commands-v1.txt";
 const ACTION_MATCH_LIMIT: usize = 5;
 const BATCH_MATCH_LIMIT: usize = 6;
 const BATCH_FUZZY_MATCH_LIMIT: usize = 8;
-const KNOWN_BREW_COMMANDS: &[&str] = &[
-    "--cache",
-    "--caskroom",
-    "--cellar",
-    "--env",
-    "--prefix",
-    "--repository",
-    "--taps",
-    "--version",
-    "alias",
-    "analytics",
-    "audit",
-    "autoremove",
-    "bottle",
-    "bump",
-    "bump-cask-pr",
-    "bump-formula-pr",
-    "bump-revision",
-    "bump-unversioned-casks",
-    "bundle",
-    "casks",
-    "cat",
-    "cleanup",
-    "command",
-    "command-not-found-init",
-    "commands",
-    "completions",
-    "config",
-    "contributions",
-    "create",
-    "debugger",
-    "deps",
-    "desc",
-    "determine-test-runners",
-    "developer",
-    "dispatch-build-bottle",
-    "docs",
-    "doctor",
-    "edit",
-    "extract",
-    "fetch",
-    "formula",
-    "formula-analytics",
-    "formulae",
-    "generate-analytics-api",
-    "generate-cask-api",
-    "generate-cask-ci-matrix",
-    "generate-formula-api",
-    "generate-man-completions",
-    "generate-zap",
-    "gist-logs",
-    "help",
-    "home",
-    "info",
-    "install",
-    "install-bundler-gems",
-    "irb",
-    "leaves",
-    "lgtm",
-    "link",
-    "linkage",
-    "list",
-    "livecheck",
-    "log",
-    "mcp-server",
-    "migrate",
-    "missing",
-    "nodenv-sync",
-    "options",
-    "outdated",
-    "pin",
-    "postinstall",
-    "pr-automerge",
-    "pr-publish",
-    "pr-pull",
-    "pr-upload",
-    "prof",
-    "pyenv-sync",
-    "rbenv-sync",
-    "readall",
-    "reinstall",
-    "release",
-    "rubocop",
-    "ruby",
-    "rubydoc",
-    "search",
-    "services",
-    "setup-ruby",
-    "sh",
-    "shellenv",
-    "source",
-    "style",
-    "tab",
-    "tap",
-    "tap-info",
-    "tap-new",
-    "test",
-    "test-bot",
-    "tests",
-    "typecheck",
-    "unalias",
-    "unbottled",
-    "uninstall",
-    "unlink",
-    "unpack",
-    "unpin",
-    "untap",
-    "update",
-    "update-if-needed",
-    "update-license-data",
-    "update-maintainers",
-    "update-perl-resources",
-    "update-python-resources",
-    "update-report",
-    "update-reset",
-    "update-sponsors",
-    "update-test",
-    "upgrade",
-    "uses",
-    "vendor-gems",
-    "vendor-install",
-    "verify",
-    "version-install",
-    "which-formula",
-    "which-update",
-];
-
-#[derive(Clone, Copy)]
-struct MotionSettings {
-    animations_enabled: bool,
-    finale_enabled: bool,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BrewAction {
@@ -170,42 +43,10 @@ enum CatalogLoadReason {
     ManualRefresh,
 }
 
-#[derive(Clone, Copy)]
-enum OutputStream {
-    Stdout,
-    Stderr,
-}
-
-struct OutputChunk {
-    stream: OutputStream,
-    bytes: Vec<u8>,
-}
-
 #[derive(Debug)]
 struct BatchResolvedPackage<'a> {
     query: String,
     package: &'a Package,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ConfirmedMatchChoice {
-    Accept,
-    SearchAgain,
-    Cancel,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BatchReviewChoice {
-    Proceed,
-    RetryAll,
-    RetryOne,
-    Cancel,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MatchSelection {
-    Selected(usize),
-    Cancelled,
 }
 
 impl BrewAction {
@@ -522,7 +363,7 @@ fn should_passthrough_default(
     }
 
     let first = parts[0].as_str();
-    if is_known_brew_command(first) {
+    if brew::is_known_brew_command(first) {
         return Ok(true);
     }
 
@@ -531,169 +372,6 @@ fn should_passthrough_default(
     }
 
     Ok(false)
-}
-
-fn should_run_motion(motion: MotionSettings) -> bool {
-    if !motion.animations_enabled {
-        return false;
-    }
-
-    let is_terminal = io::stdout().is_terminal();
-    let no_color = env::var_os("NO_COLOR").is_some();
-    let clicolor_disabled = matches!(env::var("CLICOLOR"), Ok(value) if value == "0");
-    let dumb_term = matches!(env::var("TERM"), Ok(value) if value == "dumb");
-
-    is_terminal
-        && !no_color
-        && !clicolor_disabled
-        && !dumb_term
-        && env::var_os("BRAU_NO_ANIM").is_none()
-        && env::var_os("CI").is_none()
-}
-
-fn run_with_motion<T, W, A>(enabled: bool, work: W, animate: A) -> Result<T, String>
-where
-    T: Send,
-    W: FnOnce() -> T + Send,
-    A: FnOnce(),
-{
-    if !enabled {
-        return Ok(work());
-    }
-
-    thread::scope(|scope| {
-        let work_handle = scope.spawn(work);
-        animate();
-        work_handle
-            .join()
-            .map_err(|_| "A background task stopped unexpectedly.".to_string())
-    })
-}
-
-fn brew_command_display(args: &[String]) -> String {
-    if args.is_empty() {
-        "brew".to_string()
-    } else {
-        format!("brew {}", args.join(" "))
-    }
-}
-
-fn spawn_output_reader<R>(
-    mut reader: R,
-    stream: OutputStream,
-    sender: mpsc::Sender<OutputChunk>,
-) -> thread::JoinHandle<io::Result<()>>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
-
-        loop {
-            let read = reader.read(&mut buffer)?;
-            if read == 0 {
-                return Ok(());
-            }
-
-            if sender
-                .send(OutputChunk {
-                    stream,
-                    bytes: buffer[..read].to_vec(),
-                })
-                .is_err()
-            {
-                return Ok(());
-            }
-        }
-    })
-}
-
-fn relay_output(receiver: mpsc::Receiver<OutputChunk>) -> Result<(), String> {
-    while let Ok(chunk) = receiver.recv() {
-        match chunk.stream {
-            OutputStream::Stdout => {
-                let mut stdout = io::stdout();
-                stdout
-                    .write_all(&chunk.bytes)
-                    .map_err(|error| format!("Failed to forward Homebrew stdout: {error}"))?;
-                stdout
-                    .flush()
-                    .map_err(|error| format!("Failed to flush Homebrew stdout: {error}"))?;
-            }
-            OutputStream::Stderr => {
-                let mut stderr = io::stderr();
-                stderr
-                    .write_all(&chunk.bytes)
-                    .map_err(|error| format!("Failed to forward Homebrew stderr: {error}"))?;
-                stderr
-                    .flush()
-                    .map_err(|error| format!("Failed to flush Homebrew stderr: {error}"))?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn join_output_reader(
-    handle: thread::JoinHandle<io::Result<()>>,
-    label: &str,
-) -> Result<(), String> {
-    handle
-        .join()
-        .map_err(|_| format!("The Homebrew {label} reader stopped unexpectedly."))?
-        .map_err(|error| format!("Failed to read Homebrew {label}: {error}"))
-}
-
-fn run_brew_command<A>(
-    args: &[String],
-    motion: MotionSettings,
-    animate: A,
-) -> Result<ExitStatus, String>
-where
-    A: FnOnce(),
-{
-    if !should_run_motion(motion) {
-        return Command::new("brew")
-            .args(args)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .map_err(|error| format!("Failed to launch Homebrew: {error}"));
-    }
-
-    let mut child = Command::new("brew")
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("Failed to launch Homebrew: {error}"))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture Homebrew stdout.".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Failed to capture Homebrew stderr.".to_string())?;
-
-    let (sender, receiver) = mpsc::channel();
-    let stdout_reader = spawn_output_reader(stdout, OutputStream::Stdout, sender.clone());
-    let stderr_reader = spawn_output_reader(stderr, OutputStream::Stderr, sender);
-
-    animate();
-    relay_output(receiver)?;
-    let status = child
-        .wait()
-        .map_err(|error| format!("Failed to wait for Homebrew: {error}"))?;
-
-    join_output_reader(stdout_reader, "stdout")?;
-    join_output_reader(stderr_reader, "stderr")?;
-
-    Ok(status)
 }
 
 fn run_search(
@@ -1051,7 +729,7 @@ fn resolve_batch_query_interactively<'a>(
                     action.candidates_footer(),
                 );
 
-                match prompt_match_selection_choice(&fuzzy_matches)? {
+                match prompt_match_selection_choice(fuzzy_matches.len())? {
                     MatchSelection::Selected(index) => Ok(Some(fuzzy_matches[index].package)),
                     MatchSelection::Cancelled => Ok(None),
                 }
@@ -1062,7 +740,7 @@ fn resolve_batch_query_interactively<'a>(
 
     render::print_action_candidates(query, action.label(), &matches, action.candidates_footer());
 
-    match prompt_match_selection_choice(&matches)? {
+    match prompt_match_selection_choice(matches.len())? {
         MatchSelection::Selected(index) => Ok(Some(matches[index].package)),
         MatchSelection::Cancelled => Ok(None),
     }
@@ -1132,73 +810,6 @@ fn run_brew_passthrough(args: &[String], motion: MotionSettings) -> Result<(), S
     }
 }
 
-fn refresh_brew_command_cache() -> Result<(), String> {
-    let output = Command::new("brew")
-        .args(["commands", "--quiet"])
-        .output()
-        .map_err(|error| format!("Failed to ask Homebrew for its command list: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Homebrew failed while listing commands with status {}.",
-            output.status
-        ));
-    }
-
-    let commands = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let cache_path = brew_command_cache_path()?;
-    if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create command cache directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-
-    fs::write(&cache_path, format!("{commands}\n")).map_err(|error| {
-        format!(
-            "Failed to write brew command cache {}: {error}",
-            cache_path.display()
-        )
-    })?;
-
-    Ok(())
-}
-
-fn is_known_brew_command(command: &str) -> bool {
-    KNOWN_BREW_COMMANDS.contains(&command) || cached_brew_commands().contains(command)
-}
-
-fn cached_brew_commands() -> HashSet<String> {
-    let cache_path = match brew_command_cache_path() {
-        Ok(path) => path,
-        Err(_) => return HashSet::new(),
-    };
-
-    let contents = match fs::read_to_string(&cache_path) {
-        Ok(contents) => contents,
-        Err(_) => return HashSet::new(),
-    };
-
-    contents
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-fn brew_command_cache_path() -> Result<PathBuf, String> {
-    Ok(catalog::cache_dir()?.join(BREW_COMMAND_CACHE_FILE))
-}
-
 fn search_matches<'a>(
     catalog: &'a Catalog,
     query: &str,
@@ -1217,143 +828,11 @@ fn is_confident(best: &SearchMatch<'_>, next: Option<&SearchMatch<'_>>) -> bool 
     match best.strength {
         MatchStrength::Exact => true,
         MatchStrength::Strong => next.map_or(true, |candidate| best.score - candidate.score >= 90),
-        MatchStrength::Good => next.map_or(false, |candidate| {
-            best.score >= 1_150 && best.score - candidate.score >= 180
-        }),
+        MatchStrength::Good => {
+            next.is_some_and(|candidate| best.score >= 1_150 && best.score - candidate.score >= 180)
+        }
         MatchStrength::Fuzzy => false,
     }
-}
-
-fn prompt_line(prompt: &str) -> Result<String, String> {
-    print!("{prompt}");
-    io::stdout()
-        .flush()
-        .map_err(|error| format!("Failed to flush stdout: {error}"))?;
-
-    let mut answer = String::new();
-    io::stdin()
-        .read_line(&mut answer)
-        .map_err(|error| format!("Failed to read your answer: {error}"))?;
-
-    Ok(answer)
-}
-
-fn prompt_with_parser<T>(
-    prompt: &str,
-    invalid_input_message: &str,
-    mut parse: impl FnMut(&str) -> Option<T>,
-) -> Result<T, String> {
-    loop {
-        let answer = prompt_line(prompt)?;
-        if let Some(value) = parse(&answer) {
-            return Ok(value);
-        }
-
-        println!("{invalid_input_message}");
-    }
-}
-
-fn parse_yes_no(input: &str) -> Option<bool> {
-    match input.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => Some(true),
-        "n" | "no" => Some(false),
-        _ => None,
-    }
-}
-
-fn parse_selection_index(input: &str, total: usize) -> Option<usize> {
-    let index = input.trim().parse::<usize>().ok()?;
-    if (1..=total).contains(&index) {
-        Some(index - 1)
-    } else {
-        None
-    }
-}
-
-fn parse_batch_retry_selection_input(input: &str, total: usize) -> Option<Option<usize>> {
-    let trimmed = input.trim();
-    if trimmed.eq_ignore_ascii_case("q") {
-        return Some(None);
-    }
-
-    parse_selection_index(trimmed, total).map(Some)
-}
-
-fn parse_match_selection_input(input: &str, total: usize) -> Option<MatchSelection> {
-    let trimmed = input.trim();
-    if trimmed.eq_ignore_ascii_case("q") {
-        return Some(MatchSelection::Cancelled);
-    }
-
-    parse_selection_index(trimmed, total).map(MatchSelection::Selected)
-}
-
-fn prompt_yes_no(prompt: &str) -> Result<bool, String> {
-    let prompt = format!("{prompt} [Y/n] ");
-    prompt_with_parser(&prompt, "Please answer with `y` or `n`.", parse_yes_no)
-}
-
-fn parse_confirmed_match_choice(input: &str) -> Option<ConfirmedMatchChoice> {
-    match input.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => Some(ConfirmedMatchChoice::Accept),
-        "n" | "no" => Some(ConfirmedMatchChoice::SearchAgain),
-        "q" | "quit" | "cancel" => Some(ConfirmedMatchChoice::Cancel),
-        _ => None,
-    }
-}
-
-fn prompt_confirmed_match_choice() -> Result<ConfirmedMatchChoice, String> {
-    prompt_with_parser(
-        "Keep this package? [Y/n/q] ",
-        "Please answer with `y`, `n`, or `q`.",
-        parse_confirmed_match_choice,
-    )
-}
-
-fn parse_batch_review_choice(input: &str) -> Option<BatchReviewChoice> {
-    match input.trim().to_ascii_lowercase().as_str() {
-        "" | "1" => Some(BatchReviewChoice::Proceed),
-        "2" => Some(BatchReviewChoice::RetryAll),
-        "3" => Some(BatchReviewChoice::RetryOne),
-        "4" | "q" | "quit" | "cancel" => Some(BatchReviewChoice::Cancel),
-        _ => None,
-    }
-}
-
-fn prompt_batch_review_choice() -> Result<BatchReviewChoice, String> {
-    prompt_with_parser(
-        "Choose an option [1-4]: ",
-        "Please enter `1`, `2`, `3`, or `4`.",
-        parse_batch_review_choice,
-    )
-}
-
-fn prompt_batch_retry_selection(total: usize) -> Result<Option<usize>, String> {
-    let prompt = format!("Pick a package to search again [1-{total} or q]: ");
-    let invalid_input_message = format!("Please enter a number between 1 and {total}, or `q`.");
-    prompt_with_parser(&prompt, &invalid_input_message, |input| {
-        parse_batch_retry_selection_input(input, total)
-    })
-}
-
-fn prompt_match_selection<'a>(
-    matches: &'a [SearchMatch<'a>],
-) -> Result<&'a SearchMatch<'a>, String> {
-    match prompt_match_selection_choice(matches)? {
-        MatchSelection::Selected(index) => Ok(&matches[index]),
-        MatchSelection::Cancelled => Err("Action cancelled.".to_string()),
-    }
-}
-
-fn prompt_match_selection_choice(matches: &[SearchMatch<'_>]) -> Result<MatchSelection, String> {
-    let prompt = format!("Choose a package [1-{} or q]: ", matches.len());
-    let invalid_input_message = format!(
-        "Please enter a number between 1 and {} or `q`.",
-        matches.len()
-    );
-    prompt_with_parser(&prompt, &invalid_input_message, |input| {
-        parse_match_selection_input(input, matches.len())
-    })
 }
 
 fn capitalize(value: &str) -> String {
@@ -1447,69 +926,5 @@ mod tests {
         .expect_err("ambiguous matches should be rejected");
 
         assert!(error.contains("ambiguous"));
-    }
-
-    #[test]
-    fn parse_confirmed_match_choice_supports_retry_and_cancel() {
-        assert_eq!(
-            parse_confirmed_match_choice(""),
-            Some(ConfirmedMatchChoice::Accept)
-        );
-        assert_eq!(
-            parse_confirmed_match_choice("n"),
-            Some(ConfirmedMatchChoice::SearchAgain)
-        );
-        assert_eq!(
-            parse_confirmed_match_choice("q"),
-            Some(ConfirmedMatchChoice::Cancel)
-        );
-    }
-
-    #[test]
-    fn parse_batch_review_choice_supports_all_menu_options() {
-        assert_eq!(
-            parse_batch_review_choice("1"),
-            Some(BatchReviewChoice::Proceed)
-        );
-        assert_eq!(
-            parse_batch_review_choice("2"),
-            Some(BatchReviewChoice::RetryAll)
-        );
-        assert_eq!(
-            parse_batch_review_choice("3"),
-            Some(BatchReviewChoice::RetryOne)
-        );
-        assert_eq!(
-            parse_batch_review_choice("q"),
-            Some(BatchReviewChoice::Cancel)
-        );
-    }
-
-    #[test]
-    fn parse_yes_no_supports_default_affirmative_and_negative() {
-        assert_eq!(parse_yes_no(""), Some(true));
-        assert_eq!(parse_yes_no("yes"), Some(true));
-        assert_eq!(parse_yes_no("n"), Some(false));
-        assert_eq!(parse_yes_no("maybe"), None);
-    }
-
-    #[test]
-    fn parse_batch_retry_selection_supports_number_and_cancel() {
-        assert_eq!(parse_batch_retry_selection_input("2", 3), Some(Some(1)));
-        assert_eq!(parse_batch_retry_selection_input("q", 3), Some(None));
-        assert_eq!(parse_batch_retry_selection_input("4", 3), None);
-    }
-
-    #[test]
-    fn parse_match_selection_supports_number_and_cancel() {
-        assert_eq!(
-            parse_match_selection_input("1", 2),
-            Some(MatchSelection::Selected(0))
-        );
-        assert_eq!(
-            parse_match_selection_input("q", 2),
-            Some(MatchSelection::Cancelled)
-        );
-        assert_eq!(parse_match_selection_input("0", 2), None);
     }
 }
