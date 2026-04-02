@@ -2,24 +2,24 @@
 
 <table>
 <tr>
-<td width="52%">
+<td width="48%">
 
 ### The Homebrew wrapper that actually understands you.
 
 `brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and beautiful terminal animations — all without changing how you already work.
 
-**Stop memorizing exact package names.** Just type what you mean and `brau` figures out the rest.
+Just type what you mean and `brau` figures out the rest.
 
 ```bash
-brau install pg          # Installs postgresql ✓
-brau install vsc --cask  # Installs visual-studio-code ✓
+brau install postgres          # Installs postgresql ✓
+brau install vsc  # Installs visual-studio-code ✓
 brau install ripgrep, bat, fd  # All three, at once ✓
 ```
 
 Every `brew` command you already know works with `brau` — just with a much better experience on top.
 
 </td>
-<td width="48%">
+<td width="52%">
 
 <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" />
 
