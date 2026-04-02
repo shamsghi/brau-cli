@@ -460,7 +460,7 @@ fn style() -> Style {
     Style::detect()
 }
 
-fn play_motion_sequence(label: &str, target: &str, steps: &[&str], _frame_ms: u64, enabled: bool) {
+fn play_motion_sequence(label: &str, target: &str, steps: &[&str], frame_ms: u64, enabled: bool) {
     if !enabled || !style().should_animate() {
         return;
     }
@@ -469,7 +469,8 @@ fn play_motion_sequence(label: &str, target: &str, steps: &[&str], _frame_ms: u6
     let mut stdout = io::stdout();
     let sub_frames = 5usize;
     let total_frames = steps.len() * sub_frames;
-    let ms = 55u64; // 55ms per frame → ~825ms for 3 steps
+    // Keep motion snappy, but line stays readable
+    let ms = frame_ms.max(36);
 
     for frame in 0..total_frames {
         let step_idx = (frame / sub_frames).min(steps.len() - 1);
