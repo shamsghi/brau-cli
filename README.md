@@ -1,120 +1,186 @@
-# 🍻 brau: homebrew but smarter
+# 🍻 brau — A Smarter Homebrew Experience with fuzzy search
 
-### **Improved `brew search` that understands you.**
 <table>
 <tr>
-<td width="50%">
+<td width="52%">
 
-Tired of [memorizing] exact package names or **getting errors** for simple typos 🤔?
+### The Homebrew wrapper that actually understands you.
 
-- `brau` searches homebrew, spell-checks, installs, and more, without knowing the exact package name, and it makes your terminal look good doing it. ✨
+`brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and beautiful terminal animations — all without changing how you already work.
 
-- Just install, then use `brau [appname]` and search for brew formulas and casks simultaneously. Then do `brau install [appname] -y` to install it, be prepared for the special animation at the end.
-- **Install multiple packages at once** with commas: `brau install foo, bar, baz` — with a combined blender finale. 🍹
-- **Plus u can use any other brew command with `brau` but with more cooler animations.**
+**Stop memorizing exact package names.** Just type what you mean and `brau` figures out the rest.
 
-*(And yes, it is written in **Rust**. Because all new CLI tools must be blazingly fast™ and written in Rust.)*
+```bash
+brau install pg          # Installs postgresql ✓
+brau install vsc --cask  # Installs visual-studio-code ✓
+brau install ripgrep, bat, fd  # All three, at once ✓
+```
+
+Every `brew` command you already know works with `brau` — just with a much better experience on top.
 
 </td>
-<td width="45%">
+<td width="48%">
 
-<img src="https://github.com/user-attachments/assets/87f958cb-6a2b-411d-a658-9a086cf6751c" alt="demo" />
-
+<img src="https://github.com/user-attachments/assets/87f958cb-6a2b-411d-a658-9a086cf6751c" alt="brau demo" />
 
 </td>
 </tr>
 </table>
 
-## 🚀 Quick Install
+---
 
-You can install `brau` directly via Homebrew using our custom tap! Just run:
+## ✨ Why brau?
 
-### 1. Tap the repository (tells Homebrew where to find it)
+Homebrew is great. But its search can be unforgiving — a small typo returns an error, acronyms go unrecognized, and installing multiple packages means running the same command over and over.
+
+`brau` solves all of that:
+
+- 🔍 **Fuzzy search** — typos, partial names, and acronyms all resolve to the right package
+- ⚡ **Instant results** — searches a local cache instead of hitting the network every time
+- 📦 **Search formulas and casks together** — no need to remember which flag to use
+- 🍹 **Batch installs** — install (or uninstall) multiple packages in one command (with fuzzy search)
+- 🎉 **Delightful animations** — your terminal deserves a little personality
+
+---
+
+## 🚀 Installation
+
+`brau` installs through Homebrew itself using a custom tap. Two commands and you're done.
+
+**1. Add the tap**
 ```bash
 brew tap shamsghi/brau-cli https://github.com/shamsghi/brau-cli
 ```
-### 2. Install brau (HEAD-only formula, no release tags yet)
+
+**2. Install brau**
 ```bash
 brew install brau --HEAD
 ```
 
-## 📋 Prerequisites
+> **Don't have Homebrew yet?** Get it first:
+> ```bash
+> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
 
-Before installing `brau`, make sure you have:
-
-- **macOS** and **Homebrew** — if you don't have Homebrew yet, install it with:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
+---
 
 ## 🪄 Usage
 
-You can use `brau` exactly like you'd use `brew`. It just works better.
+`brau` works exactly like `brew` — same commands, same flags — just smarter.
 
-**Find things:**
+**Search for packages:**
 ```bash
-brau postgres            # Wait, did you mean postgresql? Yes, you did.
-brau vscode --cask       # Search specifically for casks
+brau postgres              # Finds postgresql automatically
+brau vscode --cask         # Search casks specifically
+brau node                  # Searches both formulas and casks at once
 ```
 
-**Install & Uninstall with ease:**
+**Install & uninstall:**
 ```bash
-brau install pg          # Finds the best match and installs it!
-brau uninstall postgresql # Say goodbye
+brau install pg            # Fuzzy-matches and installs postgresql
+brau install node -y       # Skip the confirmation prompt
+brau uninstall postgresql  # Clean removal
 ```
 
-**Batch install/uninstall (comma-separated):**
+**Batch operations:**
 ```bash
-brau install ripgrep, bat, fd         # Install all three at once!
-brau uninstall bat, fd --yes          # Uninstall multiple, skip confirmation
-brau install google chrome, firefox --cask  # Multiple casks
+brau install ripgrep, bat, fd           # Install multiple packages at once
+brau install chrome, firefox --cask  # Batch cask install
+brau uninstall bat, fd --yes            # Batch uninstall, no prompts
 ```
 
-**Do regular Homebrew stuff:**
+**Standard Homebrew commands — fully supported:**
 ```bash
-brau update              # Passes straight to brew
+brau update
+brau upgrade
 brau cleanup --prune=all
+brau doctor
 ```
 
-## ⚔️ `brew` vs `brau`
+---
 
-| Scenario | `brew` | `brau` |
+## ⚔️ brau vs. brew
+
+| Feature | `brew` | `brau` |
 |---|---|---|
-| Typo in package name | ❌ Error | ✅ Figures it out |
-| Searching packages | 🐢 Queries network | ⚡ Hits local cache |
-| Finding casks | Separate `--cask` flag required | Searches both automatically |
-| Acronym search (`pg`, `vsc`) | ❌ No results | ✅ Matches `postgresql`, `visual-studio-code` |
-| Old / renamed packages | ❌ Not found | ✅ Matched via old names & aliases |
-| Batch install | 🐌 One at a time | ✅ `brau install a, b, c` with batch preview |
-| Regular brew commands | ✅ Native | ✅ Passed straight through |
-| Fun animations | 😐 | 🎉 |
+| Typo in package name | ❌ Error | ✅ Corrected automatically |
+| Search speed | 🐢 Network request | ⚡ Local cache |
+| Formula + cask search | Requires separate flags | ✅ Unified by default |
+| Acronym search (`pg`, `vsc`) | ❌ No results | ✅ Resolves to full package names |
+| Renamed / aliased packages | ❌ Not found | ✅ Matched via aliases |
+| Batch install | One package at a time | ✅ Comma-separated list |
+| All standard brew commands | ✅ | ✅ Passed through natively |
+| Terminal animations | 😐 | 🎉 |
 
-## 🎛️ Cool Flags
+---
 
-Need to tweak things? Try these out:
+## 🎛️ Flags Reference
 
-- `--formula` or `--cask` — Narrow down your searches.
-- `-y, --yes` — Skip the install/uninstall confirmation prompts.
-- `--no-anim` & `--no-finale` — Turn off the fun animations 😢.
-- `--refresh` — Rebuild your local cache to get the absolute freshest packages.
+| Flag | Description |
+|---|---|
+| `--formula` | Limit search/install to formulas only |
+| `--cask` | Limit search/install to casks only |
+| `-y`, `--yes` | Skip confirmation prompts |
+| `--no-anim` | Disable animations |
+| `--no-finale` | Disable the end-of-install celebration |
+| `--refresh` | Force a rebuild of the local package cache |
 
-## 💻 For Developers
+---
 
-### How It Works
+## 🛠️ How It Works
 
-When you run `brau`, here's what happens under the hood:
+`brau` is a thin, fast layer on top of Homebrew — built in Rust for snappy performance.
 
-1. **Builds a local catalog once** — On first run, `brau` asks Homebrew for all formulae and casks, then saves them in a local cache.
-2. **Refreshes only when needed** — It checks your tap repos for changes and reuses the cache if nothing changed.
-3. **Finds what you meant** — It uses fuzzy matching (typos, aliases, acronyms, partial names) to pick the best package.
-4. **Ranks the best options** — Results are scored so the most likely match appears first.
-5. **Runs brew for real** — After confirmation (or `-y`), `brau` executes the actual `brew` command.
+1. **Builds a local catalog on first run** — indexes all Homebrew formulae and casks into a local cache.
+2. **Stays fresh automatically** — checks your tap repos for updates and only rebuilds the cache when something has changed.
+3. **Understands what you meant** — uses fuzzy matching across names, aliases, acronyms, and partial strings to find the best match.
+4. **Ranks results intelligently** — scores candidates so the most relevant package surfaces first.
+5. **Hands off to brew** — once a match is confirmed, `brau` runs the actual `brew` command under the hood.
 
-Want to tinker with the code under the hood and fight the borrow checker? 🦀
+---
+
+## 👩‍💻 Contributing
+
+Contributions are welcome! To get started locally:
 
 ```bash
 cargo build
 cargo test
 cargo run -- postgres
+```
+
+### Before You Open a PR
+
+Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained.
+
+A good PR or issue should answer:
+- **What** is the problem or change?
+- **Why** does it need to exist?
+- **How** does your solution address it?
+
+Vague titles like *"fix bug"* or *"improve performance"* with no description will be closed without review.
+
+---
+
+### Using an AI Agent to Contribute?
+
+That's totally fine — **but you're still responsible** for the quality of what gets submitted. If you're using an agent to help write code or open a PR, give it this prompt to make sure the output meets the bar:
+
+```
+You are contributing to `brau`, a Rust CLI tool that wraps Homebrew with fuzzy search,
+typo correction, batch installs, and terminal animations.
+
+Repository: https://github.com/shamsghi/brau-cli
+
+Your task: [DESCRIBE THE BUG / FEATURE / CHANGE HERE]
+
+Requirements:
+- Read the existing code carefully before making any changes.
+- Do not submit a 500+ lines change, if the prompt above will generate something huge -> stop and suggest opening an issue instead first to the user
+- Keep changes minimal optimized and focused — do not refactor unrelated code.
+- Follow the existing code style and conventions used in the project.
+- Write a clear PR title and description that explains what changed, why, and how.
+- Do not include unnecessary comments, dead code, or placeholder logic.
+- If you're fixing a bug, explain the root cause. If adding a feature, explain the design decision.
+- The PR should be ready for human review, not a draft for the maintainer to finish.
 ```
