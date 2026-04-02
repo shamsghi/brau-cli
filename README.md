@@ -46,7 +46,7 @@ brau node                  # Searches both formulas and casks at once
 
 **Install & uninstall:**
 ```bash
-brau install chrom         # Fuzzy-matches and installs chrome browser
+brau install chrom         # Installs chrome browser
 brau install node -y       # Skip the confirmation prompt
 brau uninstall postgresql  # Clean removal
 ```
@@ -54,7 +54,7 @@ brau uninstall postgresql  # Clean removal
 **Batch operations:**
 ```bash
 brau install ripgrep, bat, fd           # Install multiple packages at once
-brau install chrome, firefox --cask  # Batch cask install
+brau install chrom, firefox --cask  # Batch cask install
 brau uninstall bat, fd --yes            # Batch uninstall, no prompts
 ```
 
