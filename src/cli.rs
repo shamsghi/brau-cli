@@ -226,9 +226,10 @@ impl Cli {
 
     pub fn help_text() -> String {
         let binary_name = app::display_name();
+        let version = app::version();
 
         format!(
-            "{binary_name} v2.2.0
+            "{binary_name} v{version}
 
 Fuzzy search Homebrew formulae and casks, show richer package details,
 and install matches directly from inside the CLI.
