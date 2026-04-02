@@ -9,7 +9,7 @@
 
 **Quick examples:** `brau install postgres` · `brau install vsc` · `brau install ripgrep, bat, fd`
 
-Every `brew` command you already know still works in `brau`.
+Every `brew` command you already know still works in `brau`, including aliases like `up`, `rm`, `homepage`, and `help search`.
 
 ---
 
@@ -18,7 +18,13 @@ Every `brew` command you already know still works in `brau`.
 `brau` installs through Homebrew itself using a custom brew tap. One command and you're done.
 
 ```bash
-brew install shamsghi/brau-cli/brau --HEAD
+brew install shamsghi/brau-cli/brau
+```
+
+Want the latest `main` branch instead of the tagged release?
+
+```bash
+brew install --HEAD shamsghi/brau-cli/brau
 ```
 
 > **Don't have Homebrew yet?** Get it first:
@@ -47,8 +53,10 @@ brau node                  # Searches both formulas and casks at once
 **Install & uninstall:**
 ```bash
 brau install chrom         # Installs chrome browser
+brau install rg -n         # Dry-run with brew's short flag
 brau install node -y       # Skip the confirmation prompt
 brau uninstall postgresql  # Clean removal
+brau rm postgresql         # Homebrew alias passthrough still works
 ```
 
 **Batch operations:**
@@ -61,9 +69,18 @@ brau uninstall bat, fd --yes            # Batch uninstall, no prompts
 **Standard Homebrew commands — fully supported:**
 ```bash
 brau update
+brau up
 brau upgrade
 brau cleanup --prune=all
 brau doctor
+brau help search
+```
+
+**When `brau` steps aside and lets Homebrew speak for itself:**
+```bash
+brau help search              # Forward to `brew help search`
+brau search '/^rip/'          # Forward to brew's regex search
+brau info --json=v2 ripgrep   # Forward to `brew info`
 ```
 
 ---
@@ -89,7 +106,9 @@ brau doctor
 |---|---|
 | `--formula` | Limit search/install to formulas only |
 | `--cask` | Limit search/install to casks only |
+| `-l`, `--limit` | Change the number of search matches |
 | `-y`, `--yes` | Skip confirmation prompts |
+| `-n`, `--dry-run` | Print the final install/uninstall command without running it |
 | `--no-anim` | Disable animations |
 | `--no-finale` | Disable the end-of-install celebration |
 | `--refresh` | Force a rebuild of the local package cache |
@@ -104,7 +123,7 @@ brau doctor
 2. **Stays fresh automatically** — checks your tap repos for updates and only rebuilds the cache when something has changed.
 3. **Understands what you meant** — uses fuzzy matching across names, aliases, acronyms, and partial strings to find the best match.
 4. **Ranks results intelligently** — scores candidates so the most relevant package surfaces first.
-5. **Hands off to brew** — once a match is confirmed, `brau` runs the actual `brew` command under the hood.
+5. **Hands off to brew** — once a match is confirmed, `brau` runs the actual `brew` command under the hood and forwards brew-only help/flag flows when that makes more sense than pretending.
 
 ---
 

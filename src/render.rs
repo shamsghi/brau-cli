@@ -599,8 +599,27 @@ struct BrewCommandMood {
 
 fn brew_command_mood(command: &str) -> BrewCommandMood {
     let token = command.trim().to_ascii_lowercase();
+    let canonical = match token.as_str() {
+        "--config" => "config",
+        "--repo" => "--repository",
+        "-s" => "search",
+        "-v" => "--version",
+        "abv" => "info",
+        "dr" => "doctor",
+        "environment" => "--env",
+        "homepage" => "home",
+        "instal" => "install",
+        "lc" => "livecheck",
+        "ln" => "link",
+        "ls" => "list",
+        "post_install" => "postinstall",
+        "remove" | "rm" | "uninstal" => "uninstall",
+        "tc" => "typecheck",
+        "up" => "update",
+        _ => token.as_str(),
+    };
 
-    match token.as_str() {
+    match canonical {
         "" => BrewCommandMood {
             label: "brew-generic",
             icon: "🍺",
@@ -630,9 +649,10 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
             steps: &BREW_MAINTENANCE_STEPS,
         },
         "info" | "list" | "search" | "desc" | "deps" | "cat" | "config" | "doctor" | "commands"
-        | "command" | "formula" | "formulae" | "casks" | "leaves" | "log" | "options"
-        | "outdated" | "uses" | "tap-info" | "home" | "--version" | "--prefix" | "--cellar"
-        | "--cache" | "--repository" | "--env" | "--caskroom" | "--taps" => BrewCommandMood {
+        | "command" | "formula" | "formulae" | "casks" | "help" | "leaves" | "log"
+        | "options" | "outdated" | "uses" | "tap-info" | "home" | "--version"
+        | "--prefix" | "--cellar" | "--cache" | "--repository" | "--env"
+        | "--caskroom" | "--taps" => BrewCommandMood {
             label: "brew-info",
             icon: "🧭",
             subtitle: "A softer live status line while Homebrew inspects, lists, and explains.",

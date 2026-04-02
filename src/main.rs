@@ -188,16 +188,22 @@ fn run() -> Result<(), String> {
     )?;
 
     match load.source {
-        CatalogLoadSource::Refreshed => match load_reason {
-            Some(CatalogLoadReason::FirstRun) => eprintln!(
-                "Built local Homebrew catalog ({} packages).",
-                load.catalog.total_count()
-            ),
-            _ => eprintln!(
-                "Refreshed Homebrew catalog ({} packages).",
-                load.catalog.total_count()
-            ),
-        },
+        CatalogLoadSource::Refreshed => {
+            if let Err(error) = refresh_brew_command_cache() {
+                eprintln!("Warning: could not refresh brew command cache: {error}");
+            }
+
+            match load_reason {
+                Some(CatalogLoadReason::FirstRun) => eprintln!(
+                    "Built local Homebrew catalog ({} packages).",
+                    load.catalog.total_count()
+                ),
+                _ => eprintln!(
+                    "Refreshed Homebrew catalog ({} packages).",
+                    load.catalog.total_count()
+                ),
+            }
+        }
         CatalogLoadSource::StaleFallback => {
             if let Some(warning) = load.warning.as_deref() {
                 eprintln!("Using a stale cache because refresh failed: {warning}");
@@ -218,6 +224,7 @@ fn run() -> Result<(), String> {
             queries,
             yes,
             dry_run,
+            brew_flags,
         } => {
             if queries.len() == 1 {
                 run_action(
@@ -226,6 +233,7 @@ fn run() -> Result<(), String> {
                     cli.scope,
                     yes,
                     dry_run,
+                    &brew_flags,
                     motion,
                     BrewAction::Install,
                 )
@@ -236,6 +244,7 @@ fn run() -> Result<(), String> {
                     cli.scope,
                     yes,
                     dry_run,
+                    &brew_flags,
                     motion,
                     BrewAction::Install,
                 )
@@ -245,6 +254,7 @@ fn run() -> Result<(), String> {
             queries,
             yes,
             dry_run,
+            brew_flags,
         } => {
             if queries.len() == 1 {
                 run_action(
@@ -253,6 +263,7 @@ fn run() -> Result<(), String> {
                     cli.scope,
                     yes,
                     dry_run,
+                    &brew_flags,
                     motion,
                     BrewAction::Uninstall,
                 )
@@ -263,6 +274,7 @@ fn run() -> Result<(), String> {
                     cli.scope,
                     yes,
                     dry_run,
+                    &brew_flags,
                     motion,
                     BrewAction::Uninstall,
                 )
@@ -428,6 +440,7 @@ fn run_action(
     scope: QueryScope,
     yes: bool,
     dry_run: bool,
+    brew_flags: &[String],
     motion: MotionSettings,
     action: BrewAction,
 ) -> Result<(), String> {
@@ -436,8 +449,9 @@ fn run_action(
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
     let confident = is_confident(best, matches.get(1));
+    let auto_accept = yes || dry_run;
 
-    if yes {
+    if auto_accept {
         if !confident {
             render::print_action_candidates(
                 query,
@@ -445,13 +459,10 @@ fn run_action(
                 &matches,
                 action.candidates_footer(),
             );
-            return Err(
-                "The query is ambiguous. Rerun without `--yes` to choose a match, or be more specific."
-                    .to_string(),
-            );
+            return Err("The query is ambiguous. Rerun without `--yes` or `--dry-run` to choose a match, or be more specific.".to_string());
         }
 
-        return execute_brew_action(best.package, action, dry_run, motion);
+        return execute_brew_action(best.package, action, dry_run, brew_flags, motion);
     }
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -472,7 +483,7 @@ fn run_action(
         );
 
         if prompt_yes_no(&action.prompt(best.package))? {
-            execute_brew_action(best.package, action, dry_run, motion)?;
+            execute_brew_action(best.package, action, dry_run, brew_flags, motion)?;
         } else {
             println!("{} cancelled.", capitalize(action.label()));
         }
@@ -482,7 +493,7 @@ fn run_action(
 
     render::print_action_candidates(query, action.label(), &matches, action.candidates_footer());
     let selected = prompt_match_selection(&matches)?;
-    execute_brew_action(selected.package, action, dry_run, motion)
+    execute_brew_action(selected.package, action, dry_run, brew_flags, motion)
 }
 
 fn run_batch_action(
@@ -491,13 +502,14 @@ fn run_batch_action(
     scope: QueryScope,
     yes: bool,
     dry_run: bool,
+    brew_flags: &[String],
     motion: MotionSettings,
     action: BrewAction,
 ) -> Result<(), String> {
-    if yes {
+    if yes || dry_run {
         let resolved = resolve_batch_queries_without_prompt(catalog, queries, scope, action)?;
         let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
-        return execute_batch_action(&packages, action, dry_run, motion);
+        return execute_batch_action(&packages, action, dry_run, brew_flags, motion);
     }
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -566,13 +578,14 @@ fn run_batch_action(
     }
 
     let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
-    execute_batch_action(&packages, action, dry_run, motion)
+    execute_batch_action(&packages, action, dry_run, brew_flags, motion)
 }
 
 fn execute_batch_action(
     resolved: &[&Package],
     action: BrewAction,
     dry_run: bool,
+    brew_flags: &[String],
     motion: MotionSettings,
 ) -> Result<(), String> {
     if resolved.is_empty() {
@@ -589,7 +602,7 @@ fn execute_batch_action(
     let mut failed: Vec<(&Package, String)> = Vec::new();
 
     for package in resolved {
-        match execute_brew_action(package, action, dry_run, batch_motion) {
+        match execute_brew_action(package, action, dry_run, brew_flags, batch_motion) {
             Ok(()) => succeeded.push(package),
             Err(error) => {
                 eprintln!("Failed to {} {}: {}", action.label(), package.token, error);
@@ -750,9 +763,11 @@ fn execute_brew_action(
     package: &Package,
     action: BrewAction,
     dry_run: bool,
+    brew_flags: &[String],
     motion: MotionSettings,
 ) -> Result<(), String> {
     let mut args = vec![action.command().to_string()];
+    args.extend_from_slice(brew_flags);
     if package.kind == PackageKind::Cask {
         args.push("--cask".to_string());
     }

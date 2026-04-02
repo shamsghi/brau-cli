@@ -90,7 +90,7 @@ pub(super) fn print_help_screen() {
     println!(
         "{}",
         style().body(
-            "Fuzzy Homebrew search, richer package details, and a playful wrapper around everyday brew commands."
+            "Fuzzy Homebrew search, richer package details, and a playful wrapper around everyday brew commands. When you ask for brew-only help or flags, it forwards the real command instead of faking it."
         )
     );
     println!();
@@ -123,6 +123,11 @@ pub(super) fn print_help_screen() {
         "  {} {}",
         style().token(&format!("{app_name} brew doctor")),
         style().dim("explicit passthrough for any brew subcommand or flag")
+    );
+    println!(
+        "  {} {}",
+        style().token(&format!("{app_name} help search")),
+        style().dim("show Homebrew's own docs for a command")
     );
     println!();
 
@@ -188,7 +193,7 @@ pub(super) fn print_help_screen() {
     );
     println!(
         "  {} {}",
-        style().token("-n, --limit <count>"),
+        style().token("-l, --limit <count>"),
         style().dim("change the number of search matches")
     );
     println!(
@@ -198,7 +203,7 @@ pub(super) fn print_help_screen() {
     );
     println!(
         "  {} {}",
-        style().token("--dry-run"),
+        style().token("-n, --dry-run"),
         style().dim("print install or uninstall commands without running them")
     );
     println!();
