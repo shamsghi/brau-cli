@@ -139,27 +139,47 @@ brau doctor
 
 ---
 
-## 👩‍💻 Contributing
+## Before You Open a PR
 
-Contributions are welcome! To get started locally:
-
-```bash
-cargo build
-cargo test
-cargo run -- postgres
-```
-
-### Before You Open a PR
-
-Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained.
+Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained. AI agents are welcome but you need to guarantee the code is not slop or unnecessary, [Read more below.](#-using-an-ai-agent-to-contribute)
 
 A good PR or issue should answer:
 - **What** is the problem or change?
 - **Why** does it need to exist?
 - **How** does your solution address it?
 
-Vague titles like *"fix bug"* or *"improve performance"* with no description will be closed without review.
 
+### 👩‍💻 Contributing
+
+Contributions are welcome! Here's how to get set up locally.
+
+**Prerequisites**
+- [Rust](https://rustup.rs) — install via `rustup` if you don't have it
+- [Homebrew](https://brew.sh) — required for `brau` to actually call `brew` during testing
+
+**Clone and build**
+```bash
+git clone https://github.com/shamsghi/brau-cli.git
+cd brau-cli
+cargo build
+```
+
+**Run the tests**
+```bash
+cargo test
+```
+
+**Try it out**
+```bash
+cargo run -- postgres       # Should return fuzzy-matched results for postgresql
+cargo run -- install pg -y  # End-to-end: resolves, confirms, and hands off to brew
+```
+
+**Before committing, make sure your code is formatted and lint-clean**
+```bash
+cargo fmt
+cargo clippy
+```
 ---
 
 ### Using an AI Agent to Contribute?
