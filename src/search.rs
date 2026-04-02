@@ -560,26 +560,22 @@ mod tests {
 
     #[test]
     fn exact_alias_beats_other_matches() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "ripgrep",
-                    &[],
-                    &["rg"],
-                    "Search tool like grep",
-                ),
-                package(
-                    PackageKind::Formula,
-                    "ripgrep-all",
-                    &[],
-                    &["rga"],
-                    "Search PDFs and archives",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "ripgrep",
+                &[],
+                &["rg"],
+                "Search tool like grep",
+            ),
+            package(
+                PackageKind::Formula,
+                "ripgrep-all",
+                &[],
+                &["rga"],
+                "Search PDFs and archives",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -596,26 +592,22 @@ mod tests {
 
     #[test]
     fn typo_matching_finds_the_right_formula() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "ripgrep",
-                    &[],
-                    &["rg"],
-                    "Search tool like grep",
-                ),
-                package(
-                    PackageKind::Formula,
-                    "ripme",
-                    &[],
-                    &[],
-                    "Download albums from websites",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "ripgrep",
+                &[],
+                &["rg"],
+                "Search tool like grep",
+            ),
+            package(
+                PackageKind::Formula,
+                "ripme",
+                &[],
+                &[],
+                "Download albums from websites",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -631,26 +623,22 @@ mod tests {
 
     #[test]
     fn display_names_help_casks_win() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Cask,
-                    "visual-studio-code",
-                    &["Microsoft Visual Studio Code", "VS Code"],
-                    &[],
-                    "Open-source code editor",
-                ),
-                package(
-                    PackageKind::Cask,
-                    "vscodium",
-                    &["VSCodium"],
-                    &[],
-                    "Telemetry-free code editor",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Cask,
+                "visual-studio-code",
+                &["Microsoft Visual Studio Code", "VS Code"],
+                &[],
+                "Open-source code editor",
+            ),
+            package(
+                PackageKind::Cask,
+                "vscodium",
+                &["VSCodium"],
+                &[],
+                "Telemetry-free code editor",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -666,26 +654,22 @@ mod tests {
 
     #[test]
     fn chrome_query_prefers_google_chrome_cask() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "chrome-cli",
-                    &["Chrome CLI"],
-                    &[],
-                    "Control Google Chrome from the command line",
-                ),
-                package(
-                    PackageKind::Cask,
-                    "google-chrome",
-                    &["Google Chrome"],
-                    &[],
-                    "Google's web browser",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "chrome-cli",
+                &["Chrome CLI"],
+                &[],
+                "Control Google Chrome from the command line",
+            ),
+            package(
+                PackageKind::Cask,
+                "google-chrome",
+                &["Google Chrome"],
+                &[],
+                "Google's web browser",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -702,26 +686,22 @@ mod tests {
 
     #[test]
     fn chrom_query_prefers_google_chrome_cask() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "chrome-cli",
-                    &["Chrome CLI"],
-                    &[],
-                    "Control Google Chrome from the command line",
-                ),
-                package(
-                    PackageKind::Cask,
-                    "google-chrome",
-                    &["Google Chrome"],
-                    &[],
-                    "Google's web browser",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "chrome-cli",
+                &["Chrome CLI"],
+                &[],
+                "Control Google Chrome from the command line",
+            ),
+            package(
+                PackageKind::Cask,
+                "google-chrome",
+                &["Google Chrome"],
+                &[],
+                "Google's web browser",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -738,26 +718,22 @@ mod tests {
 
     #[test]
     fn scope_filter_hides_other_package_types() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "docker",
-                    &[],
-                    &[],
-                    "Pack and ship software",
-                ),
-                package(
-                    PackageKind::Cask,
-                    "docker-desktop",
-                    &["Docker Desktop"],
-                    &[],
-                    "Desktop app for Docker",
-                ),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "docker",
+                &[],
+                &[],
+                "Pack and ship software",
+            ),
+            package(
+                PackageKind::Cask,
+                "docker-desktop",
+                &["Docker Desktop"],
+                &[],
+                "Desktop app for Docker",
+            ),
+        ]);
 
         let results = search_catalog(
             &catalog,
@@ -783,20 +759,16 @@ mod tests {
         );
         omega.installed = true;
 
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "alpha",
-                    &[],
-                    &[],
-                    "Fast downloader for releases",
-                ),
-                omega,
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "alpha",
+                &[],
+                &[],
+                "Fast downloader for releases",
+            ),
+            omega,
+        ]);
 
         let results = search_catalog(
             &catalog,

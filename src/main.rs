@@ -955,19 +955,15 @@ mod tests {
 
     #[test]
     fn resolve_batch_queries_without_prompt_accepts_clear_matches() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(
-                    PackageKind::Formula,
-                    "ripgrep",
-                    &["rg"],
-                    "Search tool like grep",
-                ),
-                package(PackageKind::Formula, "bat", &[], "Cat clone with wings"),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(
+                PackageKind::Formula,
+                "ripgrep",
+                &["rg"],
+                "Search tool like grep",
+            ),
+            package(PackageKind::Formula, "bat", &[], "Cat clone with wings"),
+        ]);
 
         let queries = vec!["rg".to_string(), "bat".to_string()];
         let resolved = resolve_batch_queries_without_prompt(
@@ -985,14 +981,10 @@ mod tests {
 
     #[test]
     fn resolve_batch_queries_without_prompt_rejects_ambiguous_matches() {
-        let catalog = Catalog {
-            generated_at: 0,
-            brew_state: None,
-            items: vec![
-                package(PackageKind::Formula, "foo-tool", &[], "First foo package"),
-                package(PackageKind::Formula, "foo-bar", &[], "Second foo package"),
-            ],
-        };
+        let catalog = Catalog::for_test(vec![
+            package(PackageKind::Formula, "foo-tool", &[], "First foo package"),
+            package(PackageKind::Formula, "foo-bar", &[], "Second foo package"),
+        ]);
 
         let queries = vec!["foo".to_string()];
         let error = resolve_batch_queries_without_prompt(

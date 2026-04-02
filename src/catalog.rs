@@ -9,7 +9,28 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Deserializer, Serialize};
 
 const CACHE_FILE_NAME: &str = "catalog-v1.json";
+const CATALOG_FORMAT_VERSION: u32 = 2;
 const CACHE_MAX_AGE: Duration = Duration::from_secs(12 * 60 * 60);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum HostPlatform {
+    Macos,
+    Linux,
+    Other,
+}
+
+impl HostPlatform {
+    fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Macos
+        } else if cfg!(any(target_os = "linux", target_os = "android")) {
+            Self::Linux
+        } else {
+            Self::Other
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -88,6 +109,10 @@ impl Package {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
+    #[serde(default)]
+    pub(crate) format_version: u32,
+    #[serde(default)]
+    pub(crate) host_platform: Option<HostPlatform>,
     pub generated_at: u64,
     #[serde(default)]
     pub brew_state: Option<BrewState>,
@@ -108,6 +133,17 @@ pub struct RepoFingerprint {
 }
 
 impl Catalog {
+    #[cfg(test)]
+    pub(crate) fn for_test(items: Vec<Package>) -> Self {
+        Self {
+            format_version: CATALOG_FORMAT_VERSION,
+            host_platform: Some(HostPlatform::current()),
+            generated_at: 0,
+            brew_state: None,
+            items,
+        }
+    }
+
     pub fn total_count(&self) -> usize {
         self.items.len()
     }
@@ -238,11 +274,26 @@ fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
     let response: BrewInfoResponse = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("Failed to parse Homebrew JSON output: {error}"))?;
 
+    let host_platform = HostPlatform::current();
     let mut items = Vec::with_capacity(response.formulae.len() + response.casks.len());
-    items.extend(response.formulae.into_iter().map(Package::from));
-    items.extend(response.casks.into_iter().map(Package::from));
+    items.extend(
+        response
+            .formulae
+            .into_iter()
+            .filter(|formula| formula.is_compatible_with(host_platform))
+            .map(Package::from),
+    );
+    items.extend(
+        response
+            .casks
+            .into_iter()
+            .filter(|cask| cask.is_compatible_with(host_platform))
+            .map(Package::from),
+    );
 
     let catalog = Catalog {
+        format_version: CATALOG_FORMAT_VERSION,
+        host_platform: Some(host_platform),
         generated_at: now_unix_timestamp(),
         brew_state: snapshot_brew_state().ok(),
         items,
@@ -309,6 +360,10 @@ fn read_cache_if_fresh(path: &Path) -> Result<Option<Catalog>, String> {
         return Ok(None);
     };
 
+    if !catalog_matches_current_runtime(&catalog) {
+        return Ok(None);
+    }
+
     match catalog.brew_state.as_ref() {
         Some(state) => match brew_state_is_current(state) {
             Ok(true) => Ok(Some(catalog)),
@@ -330,6 +385,11 @@ fn read_cache_any(path: &Path) -> Result<Option<Catalog>, String> {
         .map_err(|error| format!("Failed to parse cache {}: {error}", path.display()))?;
 
     Ok(Some(catalog))
+}
+
+fn catalog_matches_current_runtime(catalog: &Catalog) -> bool {
+    catalog.format_version == CATALOG_FORMAT_VERSION
+        && catalog.host_platform == Some(HostPlatform::current())
 }
 
 fn cache_path() -> Result<PathBuf, String> {
@@ -595,6 +655,8 @@ struct RawFormula {
     #[serde(default)]
     dependencies: Vec<String>,
     #[serde(default)]
+    requirements: Vec<RawRequirement>,
+    #[serde(default)]
     installed: Vec<serde_json::Value>,
     #[serde(default)]
     #[serde(deserialize_with = "bool_or_false")]
@@ -616,6 +678,11 @@ struct RawFormulaVersions {
 }
 
 #[derive(Debug, Deserialize)]
+struct RawRequirement {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct RawCask {
     token: String,
     #[serde(default)]
@@ -633,6 +700,8 @@ struct RawCask {
     #[serde(default)]
     version: Option<String>,
     #[serde(default)]
+    depends_on: RawCaskDependsOn,
+    #[serde(default)]
     installed: Option<serde_json::Value>,
     #[serde(default)]
     #[serde(deserialize_with = "bool_or_false")]
@@ -646,6 +715,58 @@ struct RawCask {
     #[serde(default)]
     #[serde(deserialize_with = "bool_or_false")]
     auto_updates: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawCaskDependsOn {
+    #[serde(default)]
+    macos: Option<serde_json::Value>,
+    #[serde(default)]
+    linux: Option<serde_json::Value>,
+}
+
+impl RawFormula {
+    fn is_compatible_with(&self, platform: HostPlatform) -> bool {
+        let requirements = self
+            .requirements
+            .iter()
+            .filter_map(|requirement| requirement_platform(&requirement.name))
+            .collect::<Vec<_>>();
+
+        platform_matches(platform, &requirements)
+    }
+}
+
+impl RawCask {
+    fn is_compatible_with(&self, platform: HostPlatform) -> bool {
+        self.depends_on.is_compatible_with(platform)
+    }
+}
+
+impl RawCaskDependsOn {
+    fn is_compatible_with(&self, platform: HostPlatform) -> bool {
+        let mut requirements = Vec::new();
+        if self.macos.is_some() {
+            requirements.push(HostPlatform::Macos);
+        }
+        if self.linux.is_some() {
+            requirements.push(HostPlatform::Linux);
+        }
+
+        platform_matches(platform, &requirements)
+    }
+}
+
+fn requirement_platform(name: &str) -> Option<HostPlatform> {
+    match name {
+        "macos" => Some(HostPlatform::Macos),
+        "linux" => Some(HostPlatform::Linux),
+        _ => None,
+    }
+}
+
+fn platform_matches(platform: HostPlatform, requirements: &[HostPlatform]) -> bool {
+    requirements.is_empty() || requirements.contains(&platform)
 }
 
 impl From<RawFormula> for Package {
@@ -709,4 +830,96 @@ where
     D: Deserializer<'de>,
 {
     Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn raw_formula(name: &str, requirements: &[&str]) -> RawFormula {
+        RawFormula {
+            name: name.to_string(),
+            full_name: None,
+            aliases: Vec::new(),
+            oldnames: Vec::new(),
+            desc: None,
+            homepage: None,
+            tap: None,
+            versions: RawFormulaVersions::default(),
+            license: None,
+            dependencies: Vec::new(),
+            requirements: requirements
+                .iter()
+                .map(|name| RawRequirement {
+                    name: (*name).to_string(),
+                })
+                .collect(),
+            installed: Vec::new(),
+            outdated: false,
+            deprecated: false,
+            disabled: false,
+        }
+    }
+
+    fn raw_cask(token: &str, macos: bool, linux: bool) -> RawCask {
+        RawCask {
+            token: token.to_string(),
+            full_token: None,
+            old_tokens: Vec::new(),
+            name: Vec::new(),
+            desc: None,
+            homepage: None,
+            tap: Some("homebrew/cask".to_string()),
+            version: None,
+            depends_on: RawCaskDependsOn {
+                macos: macos.then(|| serde_json::json!({ ">=": ["10.15"] })),
+                linux: linux.then_some(serde_json::Value::Bool(true)),
+            },
+            installed: None,
+            outdated: false,
+            deprecated: false,
+            disabled: false,
+            auto_updates: false,
+        }
+    }
+
+    #[test]
+    fn formula_platform_requirements_are_enforced() {
+        let macos_only = raw_formula("mas", &["macos"]);
+        assert!(macos_only.is_compatible_with(HostPlatform::Macos));
+        assert!(!macos_only.is_compatible_with(HostPlatform::Linux));
+
+        let linux_only = raw_formula("glibc", &["linux"]);
+        assert!(linux_only.is_compatible_with(HostPlatform::Linux));
+        assert!(!linux_only.is_compatible_with(HostPlatform::Macos));
+
+        let cross_platform = raw_formula("ripgrep", &[]);
+        assert!(cross_platform.is_compatible_with(HostPlatform::Macos));
+        assert!(cross_platform.is_compatible_with(HostPlatform::Linux));
+    }
+
+    #[test]
+    fn cask_platform_requirements_are_enforced() {
+        let macos_only = raw_cask("visual-studio-code", true, false);
+        assert!(macos_only.is_compatible_with(HostPlatform::Macos));
+        assert!(!macos_only.is_compatible_with(HostPlatform::Linux));
+
+        let linux_only = raw_cask("example-linux-cask", false, true);
+        assert!(linux_only.is_compatible_with(HostPlatform::Linux));
+        assert!(!linux_only.is_compatible_with(HostPlatform::Macos));
+
+        let unspecified = raw_cask("agnostic-cask", false, false);
+        assert!(unspecified.is_compatible_with(HostPlatform::Macos));
+        assert!(unspecified.is_compatible_with(HostPlatform::Linux));
+    }
+
+    #[test]
+    fn fresh_cache_requires_current_catalog_runtime_metadata() {
+        let current = Catalog::for_test(Vec::new());
+        assert!(catalog_matches_current_runtime(&current));
+
+        let mut outdated = Catalog::for_test(Vec::new());
+        outdated.format_version = 0;
+        assert!(!catalog_matches_current_runtime(&outdated));
+    }
 }
