@@ -1,3 +1,4 @@
+mod app;
 mod catalog;
 mod cli;
 mod render;
@@ -13,6 +14,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use app::BroAliasStatus;
 use catalog::{CacheStatus, Catalog, CatalogLoad, CatalogLoadSource, Package, PackageKind};
 use cli::{Cli, CommandKind, QueryScope};
 use render::CatalogWarmupKind;
@@ -286,7 +288,12 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let cli = Cli::parse(std::env::args().skip(1))?;
+    let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
+    if app::is_hidden_easter_egg_command(&raw_args) {
+        return unlock_bro_alias();
+    }
+
+    let cli = Cli::parse(raw_args)?;
     let motion = MotionSettings {
         animations_enabled: !cli.no_anim,
         finale_enabled: !cli.no_anim && !cli.no_finale,
@@ -472,6 +479,37 @@ fn expected_catalog_load_reason(force_refresh: bool) -> Result<Option<CatalogLoa
         (false, CacheStatus::Stale) => Some(CatalogLoadReason::StaleRefresh),
         (false, CacheStatus::Fresh) => None,
     })
+}
+
+fn unlock_bro_alias() -> Result<(), String> {
+    match app::unlock_bro_alias()? {
+        BroAliasStatus::Created(path) => {
+            println!(
+                "Unlocked `{}` at {}.",
+                app::ALIAS_BINARY_NAME,
+                path.display()
+            );
+            println!(
+                "You can now run `{}` anywhere you would normally run `{}`.",
+                app::ALIAS_BINARY_NAME,
+                app::DEFAULT_BINARY_NAME
+            );
+        }
+        BroAliasStatus::AlreadyAvailable(path) => {
+            println!(
+                "`{}` is already ready at {}.",
+                app::ALIAS_BINARY_NAME,
+                path.display()
+            );
+            println!(
+                "Try `{}` or any other `{}` command.",
+                format!("{} install chrome", app::ALIAS_BINARY_NAME),
+                app::DEFAULT_BINARY_NAME
+            );
+        }
+    }
+
+    Ok(())
 }
 
 impl From<CatalogLoadReason> for CatalogWarmupKind {
@@ -685,7 +723,8 @@ fn run_search(
 
     if matches.is_empty() {
         return Err(format!(
-            "No Homebrew packages matched \"{query}\". Try `brau refresh` or a broader search."
+            "No Homebrew packages matched \"{query}\". Try `{} refresh` or a broader search.",
+            app::display_name()
         ));
     }
 

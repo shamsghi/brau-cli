@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
+use crate::app;
 use crate::catalog::{Package, PackageKind};
 use crate::search::SearchMatch;
 
@@ -608,6 +609,8 @@ fn build_sparkle_line(s: &Style, t: &FinaleTheme, frame: usize, width: usize) ->
 }
 
 pub fn print_batch_query_progress(action: &str, query: &str, index: usize, total: usize) {
+    let app_name = app::display_name();
+
     println!(
         "{}",
         style().frame_title_for(action, "🧭", &format!("Resolve match {index} of {total}"))
@@ -616,7 +619,7 @@ pub fn print_batch_query_progress(action: &str, query: &str, index: usize, total
     println!(
         "{}",
         style().dim(&format!(
-            "Lock this package in before brau moves on to the next {action} query."
+            "Lock this package in before {app_name} moves on to the next {action} query."
         ))
     );
     println!();
@@ -888,7 +891,9 @@ fn build_blender_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
 }
 
 pub fn print_help_screen() {
-    println!("{}", style().frame_title_for("help", "🍺", "brau"));
+    let app_name = app::display_name();
+
+    println!("{}", style().frame_title_for("help", "🍺", &app_name));
     println!(
         "{}",
         style().body(
@@ -903,27 +908,27 @@ pub fn print_help_screen() {
     );
     println!(
         "  {} {}",
-        style().token("brau ripgrap"),
+        style().token(&format!("{app_name} ripgrap")),
         style().dim("search by default")
     );
     println!(
         "  {} {}",
-        style().token("brau install rg"),
+        style().token(&format!("{app_name} install rg")),
         style().dim("fuzzy install from inside the CLI")
     );
     println!(
         "  {} {}",
-        style().token("brau uninstall ripgrep"),
+        style().token(&format!("{app_name} uninstall ripgrep")),
         style().dim("fuzzy uninstall with the same shortlist flow")
     );
     println!(
         "  {} {}",
-        style().token("brau update"),
+        style().token(&format!("{app_name} update")),
         style().dim("pass a bare Homebrew command through with extra formatting")
     );
     println!(
         "  {} {}",
-        style().token("brau brew doctor"),
+        style().token(&format!("{app_name} brew doctor")),
         style().dim("explicit passthrough for any brew subcommand or flag")
     );
     println!();
@@ -932,13 +937,31 @@ pub fn print_help_screen() {
         "{}",
         style().frame_section_for("brew-info", "🧭", "Commands")
     );
-    println!("  {}", style().token("brau [OPTIONS] <query...>"));
-    println!("  {}", style().token("brau search [OPTIONS] <query...>"));
-    println!("  {}", style().token("brau info [OPTIONS] <query...>"));
-    println!("  {}", style().token("brau install [OPTIONS] <query...>"));
-    println!("  {}", style().token("brau uninstall [OPTIONS] <query...>"));
-    println!("  {}", style().token("brau brew <brew-command...>"));
-    println!("  {}", style().token("brau refresh"));
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} [OPTIONS] <query...>"))
+    );
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} search [OPTIONS] <query...>"))
+    );
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} info [OPTIONS] <query...>"))
+    );
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} install [OPTIONS] <query...>"))
+    );
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} uninstall [OPTIONS] <query...>"))
+    );
+    println!(
+        "  {}",
+        style().token(&format!("{app_name} brew <brew-command...>"))
+    );
+    println!("  {}", style().token(&format!("{app_name} refresh")));
     println!();
 
     println!(
@@ -987,7 +1010,10 @@ pub fn print_help_screen() {
     );
     println!();
 
-    println!("{}", style().frame_footer_for("help", "brau help"));
+    println!(
+        "{}",
+        style().frame_footer_for("help", &format!("{app_name} help"))
+    );
     println!();
 }
 
@@ -1021,6 +1047,7 @@ pub fn print_brew_command_banner(command: &str, args: &[String]) {
 }
 
 pub fn print_brew_command_footer(command: &str, success: bool) {
+    let app_name = app::display_name();
     let mood = brew_command_mood(command);
     let message = if success {
         format!("brew {command} finished")
@@ -1037,11 +1064,16 @@ pub fn print_brew_command_footer(command: &str, success: bool) {
             &message
         )
     );
-    println!("{}", style().frame_footer_for(mood.label, "back to brau"));
+    println!(
+        "{}",
+        style().frame_footer_for(mood.label, &format!("back to {app_name}"))
+    );
     println!();
 }
 
 pub fn print_search_results(query: &str, matches: &[SearchMatch<'_>]) {
+    let app_name = app::display_name();
+
     if matches.is_empty() {
         println!(
             "{}",
@@ -1049,12 +1081,12 @@ pub fn print_search_results(query: &str, matches: &[SearchMatch<'_>]) {
         );
         println!(
             "{}",
-            style().dim("Try a broader query or run `brau refresh`.")
+            style().dim(&format!("Try a broader query or run `{app_name} refresh`."))
         );
         println!();
         println!(
             "{}",
-            style().frame_footer_for("search", "end of brau results")
+            style().frame_footer_for("search", &format!("end of {app_name} results"))
         );
         println!();
         return;
@@ -1414,38 +1446,46 @@ fn print_catalog_warmup_note(kind: CatalogWarmupKind) {
         "{}",
         style().frame_title_for(spec.label, spec.icon, spec.title)
     );
-    println!("{}", style().body(spec.subtitle));
-    println!("{}", style().frame_footer_for(spec.label, spec.footer_hint));
+    println!("{}", style().body(&spec.subtitle));
+    println!(
+        "{}",
+        style().frame_footer_for(spec.label, &spec.footer_hint)
+    );
     println!();
 }
 
 fn catalog_warmup_spec(kind: CatalogWarmupKind) -> CatalogWarmupSpec {
+    let app_name = app::display_name();
+
     match kind {
         CatalogWarmupKind::FirstRun => CatalogWarmupSpec {
             label: "catalog-build",
             icon: "🫙",
             title: "Building local Homebrew catalog",
-            subtitle:
-                "First run is slower because brau asks Homebrew for every formula and cask once, then keeps a local cache for later.",
-            footer_hint: "later runs use the local cache",
+            subtitle: format!(
+                "First run is slower because {app_name} asks Homebrew for every formula and cask once, then keeps a local cache for later."
+            ),
+            footer_hint: "later runs use the local cache".to_string(),
             steps: &CATALOG_BUILD_STEPS,
         },
         CatalogWarmupKind::StaleRefresh => CatalogWarmupSpec {
             label: "catalog-build",
             icon: "🧭",
             title: "Refreshing local Homebrew catalog",
-            subtitle:
-                "The saved catalog is stale, so brau is refreshing Homebrew metadata before the next search.",
-            footer_hint: "once this settles, searches snap back",
+            subtitle: format!(
+                "The saved catalog is stale, so {app_name} is refreshing Homebrew metadata before the next search."
+            ),
+            footer_hint: "once this settles, searches snap back".to_string(),
             steps: &CATALOG_REFRESH_STEPS,
         },
         CatalogWarmupKind::ManualRefresh => CatalogWarmupSpec {
             label: "catalog-build",
             icon: "🧹",
             title: "Rebuilding local Homebrew catalog",
-            subtitle:
-                "You asked brau to rebuild its local Homebrew catalog from scratch, so this run takes the scenic route.",
-            footer_hint: "fresh cache, then back to quick searches",
+            subtitle: format!(
+                "You asked {app_name} to rebuild its local Homebrew catalog from scratch, so this run takes the scenic route."
+            ),
+            footer_hint: "fresh cache, then back to quick searches".to_string(),
             steps: &CATALOG_REFRESH_STEPS,
         },
     }
@@ -1460,13 +1500,12 @@ fn format_elapsed(elapsed: Duration) -> String {
     }
 }
 
-#[derive(Clone, Copy)]
 struct CatalogWarmupSpec {
     label: &'static str,
     icon: &'static str,
     title: &'static str,
-    subtitle: &'static str,
-    footer_hint: &'static str,
+    subtitle: String,
+    footer_hint: String,
     steps: &'static [&'static str],
 }
 

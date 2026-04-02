@@ -1,3 +1,5 @@
+use crate::app;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryScope {
     All,
@@ -177,27 +179,30 @@ impl Cli {
         })
     }
 
-    pub fn help_text() -> &'static str {
-        "brau 0.1.0
+    pub fn help_text() -> String {
+        let binary_name = app::display_name();
+
+        format!(
+            "{binary_name} 0.1.0
 
 Fuzzy search Homebrew formulae and casks, show richer package details,
 and install matches directly from inside the CLI.
 
-`search` is the default command, so `brau rg` works as shorthand for
-`brau search rg`. Separate multiple packages with commas:
-`brau install foo, bar, baz`.
+`search` is the default command, so `{binary_name} rg` works as shorthand for
+`{binary_name} search rg`. Separate multiple packages with commas:
+`{binary_name} install foo, bar, baz`.
 
-Bare Homebrew commands such as `brau update` or `brau cleanup --prune=all`
+Bare Homebrew commands such as `{binary_name} update` or `{binary_name} cleanup --prune=all`
 also pass through to `brew`.
 
 USAGE:
-    brau [OPTIONS] <query...>
-    brau search [OPTIONS] <query...>
-    brau info [OPTIONS] <query..>
-    brau install [OPTIONS] <query[, query...]>
-    brau uninstall [OPTIONS] <query[, query...]>
-    brau brew <brew-command...>
-    brau refresh
+    {binary_name} [OPTIONS] <query...>
+    {binary_name} search [OPTIONS] <query...>
+    {binary_name} info [OPTIONS] <query..>
+    {binary_name} install [OPTIONS] <query[, query...]>
+    {binary_name} uninstall [OPTIONS] <query[, query...]>
+    {binary_name} brew <brew-command...>
+    {binary_name} refresh
 
 OPTIONS:
     --formula, --formulae    Search only formulae
@@ -211,19 +216,20 @@ OPTIONS:
     -h, --help               Show this help text
 
 EXAMPLES:
-    brau ripgrap
-    brau vscode --cask
-    brau info docker desktop
-    brau install rg
-    brau install ripgrep, bat, fd
-    brau uninstall ripgrep --yes
-    brau uninstall bat, fd --yes
-    brau update
-    brau brew cleanup
-    brau install google chrome --cask
-    brau install ripgrep --no-finale
-    brau refresh
+    {binary_name} ripgrap
+    {binary_name} vscode --cask
+    {binary_name} info docker desktop
+    {binary_name} install rg
+    {binary_name} install ripgrep, bat, fd
+    {binary_name} uninstall ripgrep --yes
+    {binary_name} uninstall bat, fd --yes
+    {binary_name} update
+    {binary_name} brew cleanup
+    {binary_name} install google chrome --cask
+    {binary_name} install ripgrep --no-finale
+    {binary_name} refresh
 "
+        )
     }
 }
 
