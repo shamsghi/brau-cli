@@ -88,15 +88,15 @@ const BRO_ALIAS_PALETTE: [&str; 6] = [
     "1;38;5;109",
     "1;38;5;150",
 ];
-const BRO_MUSTACHE_ART: [&str; 5] = [
-    "             _..---..___..---.._",
-    "          .-'   /\\   .---.   /\\   '-.",
-    "        .'__..-/  '-/  _  \\-'  \\-..__'.",
-    "        \\___      _/  /_\\  \\_      ___/",
-    "            '-..-'   \\___/   '-..-'",
+const BRO_SHADES_ART: [&str; 5] = [
+    "        ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄",
+    "       ▐███████████████████████████████▌",
+    "        ▀███████████▀   ▀███████████▀",
+    "          ▀███████▀       ▀███████▀",
+    "            ▀▀▀▀             ▀▀▀▀",
 ];
-const BRO_MUSTACHE_PALETTE: [&str; 6] = [
-    "38;5;223", "38;5;221", "38;5;215", "38;5;180", "38;5;179", "38;5;137",
+const BRO_SHADES_PALETTE: [&str; 6] = [
+    "38;5;51", "38;5;45", "38;5;81", "38;5;105", "38;5;171", "38;5;201",
 ];
 const CATALOG_BUILD_STEPS: [&str; 4] = [
     "uncorking the formula shelf",
@@ -1046,8 +1046,8 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     let s = style();
     let (title, subtitle, stamp, status, footer) = if already_available {
         (
-            "Handlebar Mode Already Engaged",
-            "`bro` was already in the taproom, twirling its fake mustache and pretending nobody remembered its old name tag.",
+            "Shades Mode Already Engaged",
+            "`bro` was already in the taproom, adjusting its neon shades and pretending nobody remembered its old name tag.",
             "THE STUNT DOUBLE CLOCKED IN EARLY",
             "No fresh paperwork needed. The alias is already loitering by the taps.",
             "same pour, more swagger",
@@ -1056,13 +1056,13 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
         (
             "Witness Protection For Binaries",
             "Brau forged a second ID, slicked back its label, and now insists you have always known it as `bro`.",
-            "HANDLEBAR MODE ENGAGED",
+            "SHADES MODE ENGAGED",
             "Alias poured successfully. The bouncer will nod if you say `bro`.",
-            "same pour, different mustache",
+            "same pour, cooler shades",
         )
     };
 
-    println!("{}", s.frame_title_for("bro-unlock", "🥸", title));
+    println!("{}", s.frame_title_for("bro-unlock", "😎", title));
     println!("{}", s.body(subtitle));
     println!();
     println!("{}", s.catalog_frame_line(stamp, "1;38;5;221", '=', 9));
@@ -1076,10 +1076,10 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     }
 
     println!();
-    for (index, line) in BRO_MUSTACHE_ART.iter().enumerate() {
+    for (index, line) in BRO_SHADES_ART.iter().enumerate() {
         println!(
             "{}",
-            s.paint_finale_gradient(line, &BRO_MUSTACHE_PALETTE, index + 2)
+            s.paint_finale_gradient(line, &BRO_SHADES_PALETTE, index + 2)
         );
     }
     println!();
@@ -1110,7 +1110,7 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
         s.meta_label("swagger"),
         s.accent_text(
             "bro-unlock",
-            "same commands, louder entrance, more fake facial hair"
+            "same commands, louder entrance, slicker neon shades"
         )
     );
     println!(
