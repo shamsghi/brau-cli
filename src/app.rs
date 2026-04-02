@@ -161,7 +161,8 @@ fn alias_points_to_same_executable(
 #[cfg(test)]
 mod tests {
     use super::{
-        create_bro_alias_for, is_hidden_easter_egg_command, normalized_display_path, BroAliasStatus,
+        create_bro_alias_for, is_hidden_easter_egg_command, normalized_display_path,
+        BroAliasStatus, ALIAS_BINARY_NAME,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -257,6 +258,7 @@ mod tests {
 
         let error = create_bro_alias_for(&executable_path)
             .expect_err("conflicting bro file should be rejected");
-        assert!(error.contains("already exists"));
+        assert!(error.contains(ALIAS_BINARY_NAME));
+        assert!(error.contains(&alias_path.display().to_string()));
     }
 }

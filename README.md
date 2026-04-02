@@ -1,4 +1,4 @@
-# 🍻 brau — A Smarter Homebrew Experience with fuzzy search
+# 🍻 brau — A Smarter Homebrew Experience
 
 <table>
 <tr>
@@ -140,7 +140,7 @@ brau doctor
 
 ## Before You Open a PR
 
-Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained. AI agents are welcome but you need to guarantee the code is not slop or unnecessary, [Read more below.](#-using-an-ai-agent-to-contribute)
+Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained. AI agents are welcome but you need to guarantee the code is not slop or unnecessary, [Read more below.](https://github.com/shamsghi/brau-cli?tab=readme-ov-file#using-an-ai-agent-to-contribute)
 
 A good PR or issue should answer:
 - **What** is the problem or change?
