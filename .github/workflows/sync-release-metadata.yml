@@ -47,18 +47,16 @@ jobs:
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Download release tarball
+      - name: Download formula source tarball
         env:
           TAG: ${{ steps.release.outputs.tag }}
           REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          tarball_url="https://api.github.com/repos/$REPO/tarball/$TAG"
+          # Keep the checksum source identical to Formula/brau.rb's URL.
+          tarball_url="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"
 
           for attempt in 1 2 3 4 5 6; do
             if curl -LfsS \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer $GH_TOKEN" \
               "$tarball_url" \
               -o /tmp/release.tar.gz; then
               exit 0

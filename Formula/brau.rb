@@ -2,7 +2,7 @@ class Brau < Formula
   desc "Fuzzy Homebrew search and install CLI for formulae and casks"
   homepage "https://github.com/shamsghi/brau-cli"
   url "https://github.com/shamsghi/brau-cli/archive/refs/tags/v2.2.4.tar.gz"
-  sha256 "9f64a62e393862716dfcc0134bd6f5e2a204f48b92ddc682bb33398a98ce6c21"
+  sha256 "5d0ddc11324a00467461e3422f405c3255c3b5e671060990b205cb7a82fa1995"
   license "MIT"
   head "https://github.com/shamsghi/brau-cli.git", branch: "main"
 
