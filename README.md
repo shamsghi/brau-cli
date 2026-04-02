@@ -148,7 +148,7 @@ A good PR or issue should answer:
 - **How** does your solution address it?
 
 
-### 👩‍💻 Contributing
+## 👩‍💻 Contributing
 
 Contributions are welcome! Here's how to get set up locally.
 
@@ -183,7 +183,7 @@ cargo clippy
 
 ### Using an AI Agent to Contribute?
 
-That's totally fine — **but you're still responsible** for the quality of what gets submitted. If you're using an agent to help write code or open a PR, give it this prompt to make sure the output meets the bar:
+That's totally fine, **but you're still responsible** for the quality of what gets submitted. If you're using an agent to help write code or open a PR, give it this prompt to make sure the output meets the bar:
 
 ```
 You are contributing to `brau`, a Rust CLI tool that wraps Homebrew with fuzzy search,
@@ -195,7 +195,7 @@ Your task: [DESCRIBE THE BUG / FEATURE / CHANGE HERE]
 
 Requirements:
 - Read the existing code carefully before making any changes.
-- Do not submit a 500+ lines change, if the prompt above will generate something huge -> stop and suggest opening an issue instead first to the user
+- Do not submit a 500+ lines change, if the prompt above will generate something huge -> stop and suggest opening an issue first to the user.
 - Keep changes minimal optimized and focused — do not refactor unrelated code.
 - Follow the existing code style and conventions used in the project.
 - Write a clear PR title and description that explains what changed, why, and how.
