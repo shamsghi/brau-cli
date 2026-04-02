@@ -74,11 +74,11 @@ const BREW_DEVELOPER_STEPS: [&str; 3] = [
     "keeping pace with brew",
 ];
 const BRO_ALIAS_ART: [&str; 5] = [
-    r" ____   ____    ___  ",
-    r"| __ ) |  _ \  / _ \ ",
-    r"|  _ \ | |_) || | | |",
-    r"| |_) ||  _ < | |_| |",
-    r"|____/ |_| \_\ \___/ ",
+    "           ____   ____    ___",
+    "          | __ ) |  _ \\  / _ \\",
+    "          |  _ \\ | |_) || | | |",
+    "          | |_) ||  _ < | |_| |",
+    "          |____/ |_| \\_\\ \\___/",
 ];
 const BRO_ALIAS_PALETTE: [&str; 6] = [
     "1;38;5;221",
@@ -87,6 +87,16 @@ const BRO_ALIAS_PALETTE: [&str; 6] = [
     "1;38;5;147",
     "1;38;5;109",
     "1;38;5;150",
+];
+const BRO_MUSTACHE_ART: [&str; 5] = [
+    "             _..---..___..---.._",
+    "          .-'   /\\   .---.   /\\   '-.",
+    "        .'__..-/  '-/  _  \\-'  \\-..__'.",
+    "        \\___      _/  /_\\  \\_      ___/",
+    "            '-..-'   \\___/   '-..-'",
+];
+const BRO_MUSTACHE_PALETTE: [&str; 6] = [
+    "38;5;223", "38;5;221", "38;5;215", "38;5;180", "38;5;179", "38;5;137",
 ];
 const CATALOG_BUILD_STEPS: [&str; 4] = [
     "uncorking the formula shelf",
@@ -1034,24 +1044,28 @@ pub fn print_help_screen() {
 
 pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     let s = style();
-    let (title, subtitle, status, footer) = if already_available {
+    let (title, subtitle, stamp, status, footer) = if already_available {
         (
-            "Mustache Already Applied",
-            "`bro` was already hanging around in your cellar, leaning on the kegs like it pays rent.",
-            "The disguise is already on. No second fake mustache required.",
-            "same bottle, same stunt double",
+            "Handlebar Mode Already Engaged",
+            "`bro` was already in the taproom, twirling its fake mustache and pretending nobody remembered its old name tag.",
+            "THE STUNT DOUBLE CLOCKED IN EARLY",
+            "No fresh paperwork needed. The alias is already loitering by the taps.",
+            "same pour, more swagger",
         )
     } else {
         (
-            "Secret Menu Unlocked",
-            "Brau put on sunglasses, lowered its voice half an octave, and now answers to `bro`.",
-            "Your terminal now has a slightly more suspicious twin binary.",
-            "same bottle, different mustache",
+            "Witness Protection For Binaries",
+            "Brau forged a second ID, slicked back its label, and now insists you have always known it as `bro`.",
+            "HANDLEBAR MODE ENGAGED",
+            "Alias poured successfully. The bouncer will nod if you say `bro`.",
+            "same pour, different mustache",
         )
     };
 
-    println!("{}", s.frame_title_for("brew-generic", "🕶", title));
+    println!("{}", s.frame_title_for("bro-unlock", "🥸", title));
     println!("{}", s.body(subtitle));
+    println!();
+    println!("{}", s.catalog_frame_line(stamp, "1;38;5;221", '=', 9));
     println!();
 
     for (index, line) in BRO_ALIAS_ART.iter().enumerate() {
@@ -1062,21 +1076,58 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     }
 
     println!();
-    println!("{} {}", s.meta_label("alias"), s.token("bro"));
+    for (index, line) in BRO_MUSTACHE_ART.iter().enumerate() {
+        println!(
+            "{}",
+            s.paint_finale_gradient(line, &BRO_MUSTACHE_PALETTE, index + 2)
+        );
+    }
+    println!();
+    println!(
+        "{}",
+        s.catalog_frame_line(
+            "THIS IS DEFINITELY A DIFFERENT EXECUTABLE. VERY CONVINCING.",
+            "38;5;183",
+            '-',
+            13
+        )
+    );
+    println!();
+    println!(
+        "{}",
+        s.frame_section_for("bro-unlock", "🪪", "Witness Card")
+    );
+    println!("{} {}", s.meta_label("name"), s.token("bro"));
+    println!("{} {}", s.meta_label("formerly"), s.body("brau"));
+    println!(
+        "{} {}",
+        s.meta_label("cover story"),
+        s.accent_text("bro-unlock", "totally separate executable, your honor")
+    );
     println!("{} {}", s.meta_label("where"), s.body(path));
     println!(
         "{} {}",
-        s.meta_label("works"),
-        s.body("Any brau command, now with a backup personality.")
+        s.meta_label("swagger"),
+        s.accent_text(
+            "bro-unlock",
+            "same commands, louder entrance, more fake facial hair"
+        )
     );
     println!(
         "{} {}",
-        s.meta_label("try"),
-        s.token("bro update  ·  bro install google chrome  ·  bro info ripgrep")
+        s.meta_label("covers"),
+        s.body("search, install, uninstall, refresh, and regular brew passthrough")
     );
+    println!("{} {}", s.meta_label("first move"), s.token("bro update"));
+    println!(
+        "{} {}",
+        s.meta_label("show-off"),
+        s.token("bro install google chrome --dry-run")
+    );
+    println!("{} {}", s.meta_label("snoop"), s.token("bro info ripgrep"));
     println!();
-    println!("{}", s.status_frame("success", "✓", status));
-    println!("{}", s.frame_footer_for("brew-generic", footer));
+    println!("{}", s.status_frame("bro-unlock", "✓", status));
+    println!("{}", s.frame_footer_for("bro-unlock", footer));
     println!();
 }
 
@@ -1994,6 +2045,9 @@ impl Style {
             ("brew-tap", 0) => "38;5;147",
             ("brew-tap", 1) => "38;5;183",
             ("brew-tap", _) => "38;5;111",
+            ("bro-unlock", 0) => "38;5;221",
+            ("bro-unlock", 1) => "38;5;215",
+            ("bro-unlock", _) => "38;5;183",
             ("brew-generic", 0) => "38;5;215",
             ("brew-generic", 1) => "38;5;221",
             ("brew-generic", _) => "38;5;180",
@@ -2068,6 +2122,11 @@ impl Style {
                 primary: "1;38;5;183",
                 secondary: "38;5;183",
                 tertiary: "38;5;147",
+            },
+            "bro-unlock" => AccentPalette {
+                primary: "1;38;5;221",
+                secondary: "38;5;215",
+                tertiary: "38;5;183",
             },
             _ => AccentPalette {
                 primary: "1;38;5;109",
