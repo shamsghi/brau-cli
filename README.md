@@ -45,21 +45,20 @@ Homebrew is great. But its search can be unforgiving — a small typo returns an
 
 ## 🚀 Installation
 
-`brau` installs through Homebrew itself using a custom tap. Two commands and you're done.
+`brau` installs through Homebrew itself using a custom brew tap. One command and you're done.
 
-**1. Add the tap**
 ```bash
-brew tap shamsghi/brau-cli https://github.com/shamsghi/brau-cli
-```
-
-**2. Install brau**
-```bash
-brew install brau --HEAD
+brew install shamsghi/brau-cli/brau --HEAD
 ```
 
 > **Don't have Homebrew yet?** Get it first:
 > ```bash
 > /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
+> Then add it to your PATH so you can call `brew`:
+> ```bash
+> echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+> eval "$(/opt/homebrew/bin/brew shellenv)"
 > ```
 
 ---
