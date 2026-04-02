@@ -49,6 +49,16 @@ struct BatchResolvedPackage<'a> {
     package: &'a Package,
 }
 
+#[derive(Clone, Copy)]
+struct ActionRunContext<'a> {
+    scope: QueryScope,
+    yes: bool,
+    dry_run: bool,
+    brew_flags: &'a [String],
+    motion: MotionSettings,
+    action: BrewAction,
+}
+
 impl BrewAction {
     fn command(self) -> &'static str {
         match self {
@@ -226,28 +236,18 @@ fn run() -> Result<(), String> {
             dry_run,
             brew_flags,
         } => {
+            let context = ActionRunContext {
+                scope: cli.scope,
+                yes,
+                dry_run,
+                brew_flags: &brew_flags,
+                motion,
+                action: BrewAction::Install,
+            };
             if queries.len() == 1 {
-                run_action(
-                    &load.catalog,
-                    &queries[0],
-                    cli.scope,
-                    yes,
-                    dry_run,
-                    &brew_flags,
-                    motion,
-                    BrewAction::Install,
-                )
+                run_action(&load.catalog, &queries[0], context)
             } else {
-                run_batch_action(
-                    &load.catalog,
-                    &queries,
-                    cli.scope,
-                    yes,
-                    dry_run,
-                    &brew_flags,
-                    motion,
-                    BrewAction::Install,
-                )
+                run_batch_action(&load.catalog, &queries, context)
             }
         }
         CommandKind::Uninstall {
@@ -256,28 +256,18 @@ fn run() -> Result<(), String> {
             dry_run,
             brew_flags,
         } => {
+            let context = ActionRunContext {
+                scope: cli.scope,
+                yes,
+                dry_run,
+                brew_flags: &brew_flags,
+                motion,
+                action: BrewAction::Uninstall,
+            };
             if queries.len() == 1 {
-                run_action(
-                    &load.catalog,
-                    &queries[0],
-                    cli.scope,
-                    yes,
-                    dry_run,
-                    &brew_flags,
-                    motion,
-                    BrewAction::Uninstall,
-                )
+                run_action(&load.catalog, &queries[0], context)
             } else {
-                run_batch_action(
-                    &load.catalog,
-                    &queries,
-                    cli.scope,
-                    yes,
-                    dry_run,
-                    &brew_flags,
-                    motion,
-                    BrewAction::Uninstall,
-                )
+                run_batch_action(&load.catalog, &queries, context)
             }
         }
         CommandKind::Brew { .. } | CommandKind::Refresh | CommandKind::Help => Ok(()),
@@ -434,41 +424,44 @@ fn run_info(
     Ok(())
 }
 
-fn run_action(
-    catalog: &Catalog,
-    query: &str,
-    scope: QueryScope,
-    yes: bool,
-    dry_run: bool,
-    brew_flags: &[String],
-    motion: MotionSettings,
-    action: BrewAction,
-) -> Result<(), String> {
-    let matches = search_matches(catalog, query, scope, ACTION_MATCH_LIMIT, motion)?;
+fn run_action(catalog: &Catalog, query: &str, context: ActionRunContext<'_>) -> Result<(), String> {
+    let matches = search_matches(
+        catalog,
+        query,
+        context.scope,
+        ACTION_MATCH_LIMIT,
+        context.motion,
+    )?;
     let best = matches
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
     let confident = is_confident(best, matches.get(1));
-    let auto_accept = yes || dry_run;
+    let auto_accept = context.yes || context.dry_run;
 
     if auto_accept {
         if !confident {
             render::print_action_candidates(
                 query,
-                action.label(),
+                context.action.label(),
                 &matches,
-                action.candidates_footer(),
+                context.action.candidates_footer(),
             );
             return Err("The query is ambiguous. Rerun without `--yes` or `--dry-run` to choose a match, or be more specific.".to_string());
         }
 
-        return execute_brew_action(best.package, action, dry_run, brew_flags, motion);
+        return execute_brew_action(
+            best.package,
+            context.action,
+            context.dry_run,
+            context.brew_flags,
+            context.motion,
+        );
     }
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(format!(
             "Interactive {} requires a terminal. Use `--yes` with a specific query instead.",
-            action.present_participle()
+            context.action.present_participle()
         )
         .to_string());
     }
@@ -476,74 +469,102 @@ fn run_action(
     if confident {
         render::print_action_preview(
             query,
-            action.preview_title(),
+            context.action.preview_title(),
             best.package,
             best,
-            action.preview_footer(),
+            context.action.preview_footer(),
         );
 
-        if prompt_yes_no(&action.prompt(best.package))? {
-            execute_brew_action(best.package, action, dry_run, brew_flags, motion)?;
+        if prompt_yes_no(&context.action.prompt(best.package))? {
+            execute_brew_action(
+                best.package,
+                context.action,
+                context.dry_run,
+                context.brew_flags,
+                context.motion,
+            )?;
         } else {
-            println!("{} cancelled.", capitalize(action.label()));
+            println!("{} cancelled.", capitalize(context.action.label()));
         }
 
         return Ok(());
     }
 
-    render::print_action_candidates(query, action.label(), &matches, action.candidates_footer());
+    render::print_action_candidates(
+        query,
+        context.action.label(),
+        &matches,
+        context.action.candidates_footer(),
+    );
     let selected = prompt_match_selection(&matches)?;
-    execute_brew_action(selected.package, action, dry_run, brew_flags, motion)
+    execute_brew_action(
+        selected.package,
+        context.action,
+        context.dry_run,
+        context.brew_flags,
+        context.motion,
+    )
 }
 
 fn run_batch_action(
     catalog: &Catalog,
     queries: &[String],
-    scope: QueryScope,
-    yes: bool,
-    dry_run: bool,
-    brew_flags: &[String],
-    motion: MotionSettings,
-    action: BrewAction,
+    context: ActionRunContext<'_>,
 ) -> Result<(), String> {
-    if yes || dry_run {
-        let resolved = resolve_batch_queries_without_prompt(catalog, queries, scope, action)?;
+    if context.yes || context.dry_run {
+        let resolved =
+            resolve_batch_queries_without_prompt(catalog, queries, context.scope, context.action)?;
         let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
-        return execute_batch_action(&packages, action, dry_run, brew_flags, motion);
+        return execute_batch_action(
+            &packages,
+            context.action,
+            context.dry_run,
+            context.brew_flags,
+            context.motion,
+        );
     }
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(format!(
             "Interactive batch {} requires a terminal. Use `--yes` with specific queries instead.",
-            action.present_participle()
+            context.action.present_participle()
         ));
     }
 
-    let mut resolved =
-        match resolve_batch_queries_interactively(catalog, queries, scope, motion, action)? {
-            Some(resolved) => resolved,
-            None => {
-                println!("{} cancelled.", capitalize(action.label()));
-                return Ok(());
-            }
-        };
+    let mut resolved = match resolve_batch_queries_interactively(
+        catalog,
+        queries,
+        context.scope,
+        context.motion,
+        context.action,
+    )? {
+        Some(resolved) => resolved,
+        None => {
+            println!("{} cancelled.", capitalize(context.action.label()));
+            return Ok(());
+        }
+    };
 
     loop {
         let preview = resolved
             .iter()
             .map(|item| (item.query.as_str(), item.package))
             .collect::<Vec<_>>();
-        render::print_batch_review(action.label(), &preview);
+        render::print_batch_review(context.action.label(), &preview);
 
         match prompt_batch_review_choice()? {
             BatchReviewChoice::Proceed => break,
             BatchReviewChoice::RetryAll => {
                 resolved = match resolve_batch_queries_interactively(
-                    catalog, queries, scope, motion, action,
+                    catalog,
+                    queries,
+                    context.scope,
+                    context.motion,
+                    context.action,
                 )? {
                     Some(resolved) => resolved,
                     None => {
-                        println!("{} cancelled.", capitalize(action.label()));
+                        println!("{} cancelled.", capitalize(context.action.label()));
                         return Ok(());
                     }
                 };
@@ -556,29 +577,35 @@ fn run_batch_action(
                 let package = match resolve_batch_query_interactively(
                     catalog,
                     &query,
-                    scope,
-                    motion,
-                    action,
+                    context.scope,
+                    context.motion,
+                    context.action,
                     index + 1,
                     queries.len(),
                 )? {
                     Some(package) => package,
                     None => {
-                        println!("{} cancelled.", capitalize(action.label()));
+                        println!("{} cancelled.", capitalize(context.action.label()));
                         return Ok(());
                     }
                 };
                 resolved[index].package = package;
             }
             BatchReviewChoice::Cancel => {
-                println!("{} cancelled.", capitalize(action.label()));
+                println!("{} cancelled.", capitalize(context.action.label()));
                 return Ok(());
             }
         }
     }
 
     let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
-    execute_batch_action(&packages, action, dry_run, brew_flags, motion)
+    execute_batch_action(
+        &packages,
+        context.action,
+        context.dry_run,
+        context.brew_flags,
+        context.motion,
+    )
 }
 
 fn execute_batch_action(
