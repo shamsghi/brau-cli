@@ -5,7 +5,7 @@
 `brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and a cleaner install flow — all without changing how you already work.
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="860" />
+  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="550" />
 </p>
 
 **Why people use `brau`:**
