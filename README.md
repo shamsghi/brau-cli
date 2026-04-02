@@ -83,7 +83,29 @@ brau search '/^rip/'          # Forward to brew's regex search
 brau info --json=v2 ripgrep   # Forward to `brew info`
 ```
 
+## 🎛️ Flags Reference
+
+| Flag | Description |
+|---|---|
+| `--formula` | Limit search/install to formulas only |
+| `--cask` | Limit search/install to casks only |
+| `-l`, `--limit` | Change the number of search matches |
+| `-y`, `--yes` | Skip confirmation prompts |
+| `-n`, `--dry-run` | Print the final install/uninstall command without running it |
+| `--no-anim` | Disable animations |
+| `--no-finale` | Disable the end-of-install celebration |
+| `--refresh` | Force a rebuild of the local package cache |
 ---
+
+## 🛠️ How It Works
+
+`brau` is a thin, fast layer on top of Homebrew, built in Rust for snappy performance.
+
+1. **Builds a local catalog on first run** — indexes all Homebrew formulae and casks into a local cache.
+2. **Stays fresh automatically** — checks your tap repos for updates and only rebuilds the cache when something has changed.
+3. **Understands what you meant** — uses fuzzy matching across names, aliases, acronyms, and partial strings to find the best match.
+4. **Ranks results intelligently** — scores candidates so the most relevant package surfaces first.
+5. **Hands off to brew** — once a match is confirmed, `brau` runs the actual `brew` command under the hood and forwards brew-only help/flag flows when that makes more sense.
 
 ## ⚔️ brau vs. brew
 
@@ -100,34 +122,7 @@ brau info --json=v2 ripgrep   # Forward to `brew info`
 
 ---
 
-## 🎛️ Flags Reference
-
-| Flag | Description |
-|---|---|
-| `--formula` | Limit search/install to formulas only |
-| `--cask` | Limit search/install to casks only |
-| `-l`, `--limit` | Change the number of search matches |
-| `-y`, `--yes` | Skip confirmation prompts |
-| `-n`, `--dry-run` | Print the final install/uninstall command without running it |
-| `--no-anim` | Disable animations |
-| `--no-finale` | Disable the end-of-install celebration |
-| `--refresh` | Force a rebuild of the local package cache |
-
----
-
-## 🛠️ How It Works
-
-`brau` is a thin, fast layer on top of Homebrew — built in Rust for snappy performance.
-
-1. **Builds a local catalog on first run** — indexes all Homebrew formulae and casks into a local cache.
-2. **Stays fresh automatically** — checks your tap repos for updates and only rebuilds the cache when something has changed.
-3. **Understands what you meant** — uses fuzzy matching across names, aliases, acronyms, and partial strings to find the best match.
-4. **Ranks results intelligently** — scores candidates so the most relevant package surfaces first.
-5. **Hands off to brew** — once a match is confirmed, `brau` runs the actual `brew` command under the hood and forwards brew-only help/flag flows when that makes more sense than pretending.
-
----
-
-## Before You Open a PR
+## Before Opening a PR
 
 Found a bug or have a feature idea? Open an issue — feedback of all kinds is appreciated. Low-effort or AI-generated slop PRs will not be reviewed or merged. If you're contributing code, make sure it is intentional, well-reasoned, and clearly explained. AI agents are welcome but you need to guarantee the code is not slop or unnecessary, [Read more below.](https://github.com/shamsghi/brau-cli?tab=readme-ov-file#using-an-ai-agent-to-contribute)
 
@@ -139,7 +134,7 @@ A good PR or issue should answer:
 
 ## 👩‍💻 Contributing
 
-Contributions are welcome! Here's how to get set up locally.
+Here's how to get set up locally.
 
 **Prerequisites**
 - [Rust](https://rustup.rs) — install via `rustup` if you don't have it
