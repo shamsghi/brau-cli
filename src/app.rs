@@ -95,7 +95,7 @@ fn create_bro_alias_for(executable_path: &Path) -> Result<BroAliasStatus, String
         }
 
         return Err(format!(
-            "`{ALIAS_BINARY_NAME}` already exists at {}. Remove or rename it before unlocking the easter egg there.",
+            "Something is already squatting the `{ALIAS_BINARY_NAME}` name at {}. Evict it first, then we can talk shades.",
             alias_path.display()
         ));
     }
@@ -116,7 +116,7 @@ fn create_bro_alias_for(executable_path: &Path) -> Result<BroAliasStatus, String
     #[cfg(not(unix))]
     {
         let _ = link_target;
-        Err("The `bro` alias easter egg is only available on Unix-like systems.".to_string())
+        Err("The `bro` alias only works on Unix-like systems. Windows gets no shades. Those are the rules.".to_string())
     }
 }
 

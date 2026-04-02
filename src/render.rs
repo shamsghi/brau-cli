@@ -1046,19 +1046,19 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     let s = style();
     let (title, subtitle, stamp, status, footer) = if already_available {
         (
-            "Shades Mode Already Engaged",
-            "`bro` was already in the taproom, adjusting its neon shades and pretending nobody remembered its old name tag.",
-            "THE STUNT DOUBLE CLOCKED IN EARLY",
-            "No fresh paperwork needed. The alias is already loitering by the taps.",
-            "same pour, more swagger",
+            "Born With The Bone Structure. Never Needed The Arc.",
+            "`bro` didn't mew its way here. It was born with a positive canthal tilt, forward skull growth, and a name that already slapped. It mogged `brau` out of existence without breaking a sweat.",
+            "HARDMAXXED FROM BIRTH. ARC SKIPPED.",
+            "Nothing to do. `bro` was already mogging the entire filesystem.",
+            "positive canthal tilt since day one",
         )
     } else {
         (
-            "Witness Protection For Binaries",
-            "Brau forged a second ID, slicked back its label, and now insists you have always known it as `bro`.",
-            "SHADES MODE ENGAGED",
-            "Alias poured successfully. The bouncer will nod if you say `bro`.",
-            "same pour, cooler shades",
+            "Looksmaxxed Into A New Jawline.",
+            "`brau` mewed for three months, fixed its canthal tilt, and legally changed its name to `bro`. The jawline did the rest. You wouldn't get it.",
+            "GLOW-UP: VERIFIED. MEWING: VINDICATED.",
+            "Alias forged. `bro` has hunter eyes and zero interest in your opinion.",
+            "same binary, different bone structure",
         )
     };
 
@@ -1086,7 +1086,7 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     println!(
         "{}",
         s.catalog_frame_line(
-            "THIS IS DEFINITELY A DIFFERENT EXECUTABLE. VERY CONVINCING.",
+            "CANTHAL TILT: POSITIVE. JAWLINE: IMMACULATE. SYMLINK STATUS: IRRELEVANT.",
             "38;5;183",
             '-',
             13
@@ -1102,7 +1102,7 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
     println!(
         "{} {}",
         s.meta_label("cover story"),
-        s.accent_text("bro-unlock", "totally separate executable, your honor")
+        s.accent_text("bro-unlock", "genetically distinct executable, your honor, look at the bone structure")
     );
     println!("{} {}", s.meta_label("where"), s.body(path));
     println!(
@@ -1110,21 +1110,21 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
         s.meta_label("swagger"),
         s.accent_text(
             "bro-unlock",
-            "same commands, louder entrance, slicker neon shades"
+            "identical internals, hunter eyes, positive canthal tilt, mogging other CLIs without trying"
         )
     );
     println!(
         "{} {}",
         s.meta_label("covers"),
-        s.body("search, install, uninstall, refresh, and regular brew passthrough")
+        s.body("search, install, uninstall, refresh — and any brew command it doesn't recognise, forwarded without judgment")
     );
-    println!("{} {}", s.meta_label("first move"), s.token("bro update"));
+    println!("{} {}", s.meta_label("first mew"), s.token("bro update"));
     println!(
         "{} {}",
         s.meta_label("show-off"),
-        s.token("bro install google chrome --dry-run")
+        s.token("bro install chrome -y")
     );
-    println!("{} {}", s.meta_label("snoop"), s.token("bro info ripgrep"));
+    println!("{} {}", s.meta_label("looksmax tier"), s.token("bro info ripgrep"));
     println!();
     println!("{}", s.status_frame("bro-unlock", "✓", status));
     println!("{}", s.frame_footer_for("bro-unlock", footer));
