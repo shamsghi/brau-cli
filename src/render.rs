@@ -96,7 +96,7 @@ const BRO_SHADES_ART: [&str; 5] = [
     "            ▀▀▀▀             ▀▀▀▀",
 ];
 const BRO_SHADES_PALETTE: [&str; 6] = [
-    "38;5;51", "38;5;45", "38;5;81", "38;5;105", "38;5;171", "38;5;201",
+    "38;5;220", "38;5;214", "38;5;226", "38;5;178", "38;5;136", "38;5;130",
 ];
 const CATALOG_BUILD_STEPS: [&str; 4] = [
     "uncorking the formula shelf",
