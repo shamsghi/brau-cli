@@ -1,12 +1,11 @@
 # 🍻 brau — A Smarter Homebrew Experience
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="500" />
+</p>
 
 ### The Homebrew wrapper that actually understands you.
 
 `brau` is a drop-in replacement for `brew` that adds fuzzy search, typo correction, acronym matching, batch installs, and a cleaner install flow — all without changing how you already work.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="550" />
-</p>
 
 **Why people use `brau`:**
 - Corrects package intent (`postgres` → `postgresql`)
