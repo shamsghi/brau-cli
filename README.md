@@ -31,18 +31,7 @@ brew install --HEAD shamsghi/brau-cli/brau
 > ```bash
 > /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 > ```
-> Then load `brew shellenv` for your platform if the installer did not already do it:
-> ```bash
-> # Apple Silicon macOS
-> eval "$(/opt/homebrew/bin/brew shellenv)"
->
-> # Intel macOS
-> eval "$(/usr/local/bin/brew shellenv)"
->
-> # Linux
-> eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-> ```
-> Add the matching line from above to your shell profile (`~/.zprofile`, `~/.bashrc`, or similar) if you want it to persist across new shells.
+> Once installed, follow the instructions printed in your terminal (at the end) to add Homebrew to your PATH.
 
 ---
 
