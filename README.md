@@ -1,6 +1,6 @@
 # 🍻 brau — A Smarter Homebrew Experience
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/d34b5690-0d7e-4402-a62f-0980d922faa2" alt="brau demo" width="500" />
+  <img src="https://github.com/user-attachments/assets/e921e11a-5930-4422-ab4d-3a498f76d9f3" alt="brau demo" width="500" />
 </p>
 
 ### The Homebrew wrapper that actually understands you.
