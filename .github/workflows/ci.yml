@@ -6,13 +6,35 @@ on:
       - main
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   checks:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Validate release metadata sync script
+        run: |
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          git archive HEAD | tar -x -C "$tmpdir"
+
+          (
+            cd "$tmpdir"
+            export GITHUB_REPOSITORY=shamsghi/brau-cli
+            test_sha="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+            bash scripts/sync_release_metadata.sh v9.9.9 "$test_sha"
+
+            grep -q '^version = "9\.9\.9"$' Cargo.toml
+            perl -0ne 'exit 0 if /\[\[package\]\]\nname = "brau"\nversion = "9\.9\.9"/; exit 1' Cargo.lock
+            grep -q 'url "https://github.com/shamsghi/brau-cli/archive/refs/tags/v9.9.9.tar.gz"' Formula/brau.rb
+            grep -q "sha256 \"$test_sha\"" Formula/brau.rb
+          )
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
