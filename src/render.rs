@@ -90,29 +90,21 @@ const HONEY_HUES: [&str; 4] = ["38;5;214", "38;5;220", "38;5;221", "38;5;228"];
 const TEAL_HUES: [&str; 2] = ["38;5;73", "38;5;109"];
 
 // ── Broom sweep animation frames ─────────────────────────────────────
-const BROOM_FRAMES: [&str; 4] = [
-    "/|\\.",
-    "/|\\.:",
-    "/|\\.:·",
-    "/|\\.:·˚",
-];
-const DUST_TRAIL: [&str; 8] = [
-    "·", "˚", "∘", "✦", "·", "˚", "∘", ".",
-];
+const BROOM_FRAMES: [&str; 4] = ["/|\\.", "/|\\.:", "/|\\.:·", "/|\\.:·˚"];
+const DUST_TRAIL: [&str; 8] = ["·", "˚", "∘", "✦", "·", "˚", "∘", "."];
 const SWEEP_COLORS: [&str; 6] = [
-    "38;5;223", "38;5;222", "38;5;221",
-    "38;5;220", "38;5;214", "38;5;228",
+    "38;5;223", "38;5;222", "38;5;221", "38;5;220", "38;5;214", "38;5;228",
 ];
 
 // ── Charm animation sprites (themed per action) ─────────────────────
-const CHARM_SEARCH: [&str; 6]  = ["◇", "◈", "◆", "◈", "◇", "◈"];
+const CHARM_SEARCH: [&str; 6] = ["◇", "◈", "◆", "◈", "◇", "◈"];
 const CHARM_INSTALL: [&str; 5] = ["◦", "○", "◎", "●", "◉"];
 const CHARM_UNINSTALL: [&str; 5] = ["◉", "●", "◎", "○", "◦"];
-const CHARM_MAINT: [&str; 4]   = ["╲", "│", "╱", "─"];
-const CHARM_INFO: [&str; 4]    = ["◇", "◈", "◆", "◈"];
+const CHARM_MAINT: [&str; 4] = ["╲", "│", "╱", "─"];
+const CHARM_INFO: [&str; 4] = ["◇", "◈", "◆", "◈"];
 const CHARM_SERVICE: [&str; 4] = ["✧", "✦", "✧", "✦"];
-const CHARM_TAP: [&str; 4]     = ["◁", "▷", "◁", "▷"];
-const CHARM_DEV: [&str; 4]     = ["⊕", "⊗", "⊕", "⊗"];
+const CHARM_TAP: [&str; 4] = ["◁", "▷", "◁", "▷"];
+const CHARM_DEV: [&str; 4] = ["⊕", "⊗", "⊕", "⊗"];
 const CHARM_GENERIC: [&str; 4] = ["·", ":", "·", ":"];
 
 #[derive(Clone, Copy)]
@@ -145,75 +137,131 @@ struct FinaleTheme {
 const FINALE_THEMES: [FinaleTheme; 8] = [
     // 0 · Amber Ale  — the classic warm golden brew
     FinaleTheme {
-        amber:   ["38;5;214", "38;5;220", "38;5;221", "38;5;178"],
-        gold:    ["1;38;5;220", "1;38;5;226", "1;38;5;228"],
-        foam:    ["38;5;255", "38;5;230", "38;5;223"],
-        teal:    ["38;5;73",  "38;5;109", "38;5;116"],
-        green:   ["1;38;5;114", "1;38;5;150", "1;38;5;156"],
-        sparkle: ["1;38;5;214", "1;38;5;177", "1;38;5;114", "1;38;5;220", "1;38;5;204", "1;38;5;159"],
+        amber: ["38;5;214", "38;5;220", "38;5;221", "38;5;178"],
+        gold: ["1;38;5;220", "1;38;5;226", "1;38;5;228"],
+        foam: ["38;5;255", "38;5;230", "38;5;223"],
+        teal: ["38;5;73", "38;5;109", "38;5;116"],
+        green: ["1;38;5;114", "1;38;5;150", "1;38;5;156"],
+        sparkle: [
+            "1;38;5;214",
+            "1;38;5;177",
+            "1;38;5;114",
+            "1;38;5;220",
+            "1;38;5;204",
+            "1;38;5;159",
+        ],
     },
     // 1 · Tropical IPA  — mango, lime, papaya
     FinaleTheme {
-        amber:   ["38;5;215", "38;5;221", "38;5;222", "38;5;179"],
-        gold:    ["1;38;5;228", "1;38;5;222", "1;38;5;186"],
-        foam:    ["38;5;229", "38;5;223", "38;5;187"],
-        teal:    ["38;5;114", "38;5;150", "38;5;79"],
-        green:   ["1;38;5;156", "1;38;5;192", "1;38;5;228"],
-        sparkle: ["1;38;5;215", "1;38;5;222", "1;38;5;156", "1;38;5;228", "1;38;5;114", "1;38;5;186"],
+        amber: ["38;5;215", "38;5;221", "38;5;222", "38;5;179"],
+        gold: ["1;38;5;228", "1;38;5;222", "1;38;5;186"],
+        foam: ["38;5;229", "38;5;223", "38;5;187"],
+        teal: ["38;5;114", "38;5;150", "38;5;79"],
+        green: ["1;38;5;156", "1;38;5;192", "1;38;5;228"],
+        sparkle: [
+            "1;38;5;215",
+            "1;38;5;222",
+            "1;38;5;156",
+            "1;38;5;228",
+            "1;38;5;114",
+            "1;38;5;186",
+        ],
     },
     // 2 · Berry Sour  — raspberry, plum, violet
     FinaleTheme {
-        amber:   ["38;5;168", "38;5;204", "38;5;211", "38;5;175"],
-        gold:    ["1;38;5;212", "1;38;5;218", "1;38;5;225"],
-        foam:    ["38;5;225", "38;5;218", "38;5;182"],
-        teal:    ["38;5;133", "38;5;140", "38;5;177"],
-        green:   ["1;38;5;183", "1;38;5;219", "1;38;5;225"],
-        sparkle: ["1;38;5;204", "1;38;5;177", "1;38;5;219", "1;38;5;212", "1;38;5;183", "1;38;5;225"],
+        amber: ["38;5;168", "38;5;204", "38;5;211", "38;5;175"],
+        gold: ["1;38;5;212", "1;38;5;218", "1;38;5;225"],
+        foam: ["38;5;225", "38;5;218", "38;5;182"],
+        teal: ["38;5;133", "38;5;140", "38;5;177"],
+        green: ["1;38;5;183", "1;38;5;219", "1;38;5;225"],
+        sparkle: [
+            "1;38;5;204",
+            "1;38;5;177",
+            "1;38;5;219",
+            "1;38;5;212",
+            "1;38;5;183",
+            "1;38;5;225",
+        ],
     },
     // 3 · Ocean Stout  — deep teal, seafoam, moonlight
     FinaleTheme {
-        amber:   ["38;5;24",  "38;5;30",  "38;5;31",  "38;5;37"],
-        gold:    ["1;38;5;117", "1;38;5;123", "1;38;5;159"],
-        foam:    ["38;5;159", "38;5;153", "38;5;195"],
-        teal:    ["38;5;30",  "38;5;37",  "38;5;73"],
-        green:   ["1;38;5;79",  "1;38;5;115", "1;38;5;158"],
-        sparkle: ["1;38;5;117", "1;38;5;159", "1;38;5;79",  "1;38;5;123", "1;38;5;153", "1;38;5;195"],
+        amber: ["38;5;24", "38;5;30", "38;5;31", "38;5;37"],
+        gold: ["1;38;5;117", "1;38;5;123", "1;38;5;159"],
+        foam: ["38;5;159", "38;5;153", "38;5;195"],
+        teal: ["38;5;30", "38;5;37", "38;5;73"],
+        green: ["1;38;5;79", "1;38;5;115", "1;38;5;158"],
+        sparkle: [
+            "1;38;5;117",
+            "1;38;5;159",
+            "1;38;5;79",
+            "1;38;5;123",
+            "1;38;5;153",
+            "1;38;5;195",
+        ],
     },
     // 4 · Aurora Lager  — arctic green, violet, electric blue
     FinaleTheme {
-        amber:   ["38;5;48",  "38;5;84",  "38;5;85",  "38;5;49"],
-        gold:    ["1;38;5;121", "1;38;5;158", "1;38;5;194"],
-        foam:    ["38;5;194", "38;5;158", "38;5;195"],
-        teal:    ["38;5;63",  "38;5;99",  "38;5;141"],
-        green:   ["1;38;5;84",  "1;38;5;121", "1;38;5;157"],
-        sparkle: ["1;38;5;48",  "1;38;5;141", "1;38;5;84",  "1;38;5;177", "1;38;5;121", "1;38;5;159"],
+        amber: ["38;5;48", "38;5;84", "38;5;85", "38;5;49"],
+        gold: ["1;38;5;121", "1;38;5;158", "1;38;5;194"],
+        foam: ["38;5;194", "38;5;158", "38;5;195"],
+        teal: ["38;5;63", "38;5;99", "38;5;141"],
+        green: ["1;38;5;84", "1;38;5;121", "1;38;5;157"],
+        sparkle: [
+            "1;38;5;48",
+            "1;38;5;141",
+            "1;38;5;84",
+            "1;38;5;177",
+            "1;38;5;121",
+            "1;38;5;159",
+        ],
     },
     // 5 · Cherry Blossom  — sakura pink, peach, soft rose
     FinaleTheme {
-        amber:   ["38;5;217", "38;5;218", "38;5;224", "38;5;181"],
-        gold:    ["1;38;5;218", "1;38;5;224", "1;38;5;230"],
-        foam:    ["38;5;230", "38;5;224", "38;5;188"],
-        teal:    ["38;5;138", "38;5;175", "38;5;181"],
-        green:   ["1;38;5;218", "1;38;5;224", "1;38;5;223"],
-        sparkle: ["1;38;5;217", "1;38;5;224", "1;38;5;218", "1;38;5;181", "1;38;5;175", "1;38;5;230"],
+        amber: ["38;5;217", "38;5;218", "38;5;224", "38;5;181"],
+        gold: ["1;38;5;218", "1;38;5;224", "1;38;5;230"],
+        foam: ["38;5;230", "38;5;224", "38;5;188"],
+        teal: ["38;5;138", "38;5;175", "38;5;181"],
+        green: ["1;38;5;218", "1;38;5;224", "1;38;5;223"],
+        sparkle: [
+            "1;38;5;217",
+            "1;38;5;224",
+            "1;38;5;218",
+            "1;38;5;181",
+            "1;38;5;175",
+            "1;38;5;230",
+        ],
     },
     // 6 · Neon Haze  — electric cyan, hot magenta, lime
     FinaleTheme {
-        amber:   ["38;5;45",  "38;5;51",  "38;5;87",  "38;5;123"],
-        gold:    ["1;38;5;201", "1;38;5;207", "1;38;5;213"],
-        foam:    ["38;5;195", "38;5;189", "38;5;159"],
-        teal:    ["38;5;201", "38;5;165", "38;5;129"],
-        green:   ["1;38;5;118", "1;38;5;154", "1;38;5;190"],
-        sparkle: ["1;38;5;51",  "1;38;5;201", "1;38;5;118", "1;38;5;213", "1;38;5;87",  "1;38;5;190"],
+        amber: ["38;5;45", "38;5;51", "38;5;87", "38;5;123"],
+        gold: ["1;38;5;201", "1;38;5;207", "1;38;5;213"],
+        foam: ["38;5;195", "38;5;189", "38;5;159"],
+        teal: ["38;5;201", "38;5;165", "38;5;129"],
+        green: ["1;38;5;118", "1;38;5;154", "1;38;5;190"],
+        sparkle: [
+            "1;38;5;51",
+            "1;38;5;201",
+            "1;38;5;118",
+            "1;38;5;213",
+            "1;38;5;87",
+            "1;38;5;190",
+        ],
     },
     // 7 · Copper Porter  — burnished copper, mahogany, warm cream
     FinaleTheme {
-        amber:   ["38;5;130", "38;5;166", "38;5;172", "38;5;136"],
-        gold:    ["1;38;5;173", "1;38;5;179", "1;38;5;223"],
-        foam:    ["38;5;223", "38;5;217", "38;5;181"],
-        teal:    ["38;5;94",  "38;5;130", "38;5;137"],
-        green:   ["1;38;5;179", "1;38;5;186", "1;38;5;223"],
-        sparkle: ["1;38;5;172", "1;38;5;179", "1;38;5;186", "1;38;5;173", "1;38;5;223", "1;38;5;130"],
+        amber: ["38;5;130", "38;5;166", "38;5;172", "38;5;136"],
+        gold: ["1;38;5;173", "1;38;5;179", "1;38;5;223"],
+        foam: ["38;5;223", "38;5;217", "38;5;181"],
+        teal: ["38;5;94", "38;5;130", "38;5;137"],
+        green: ["1;38;5;179", "1;38;5;186", "1;38;5;223"],
+        sparkle: [
+            "1;38;5;172",
+            "1;38;5;179",
+            "1;38;5;186",
+            "1;38;5;173",
+            "1;38;5;223",
+            "1;38;5;130",
+        ],
     },
 ];
 
@@ -346,7 +394,13 @@ pub fn play_install_finale(package: &Package, enabled: bool) {
     println!();
 }
 
-fn build_finale_frame(s: &Style, t: &FinaleTheme, token: &str, frame: usize, _total: usize) -> Vec<String> {
+fn build_finale_frame(
+    s: &Style,
+    t: &FinaleTheme,
+    token: &str,
+    frame: usize,
+    _total: usize,
+) -> Vec<String> {
     let mut lines: Vec<String> = Vec::with_capacity(16);
     let fill_level = frame.min(8); // mug fills over frames 0-8
     let celebrating = frame >= 8;
@@ -412,7 +466,8 @@ fn build_finale_frame(s: &Style, t: &FinaleTheme, token: &str, frame: usize, _to
         let filled_from_bottom = fill_level; // how many rows from bottom are filled
         let row_from_bottom = 7 - row;
         let is_filled = (row_from_bottom as usize) < filled_from_bottom;
-        let is_foam_row = is_filled && (row_from_bottom as usize) >= filled_from_bottom.saturating_sub(1);
+        let is_foam_row =
+            is_filled && (row_from_bottom as usize) >= filled_from_bottom.saturating_sub(1);
 
         let inner = if !is_filled {
             "                    ".to_string()
@@ -452,21 +507,13 @@ fn build_finale_frame(s: &Style, t: &FinaleTheme, token: &str, frame: usize, _to
         let bar = "═".repeat(bar_len);
         let padding = " ".repeat(((52usize).saturating_sub(bar_len)) / 2);
 
-        lines.push(s.paint_finale_gradient(
-            &format!("{padding}╔{bar}╗"),
-            &t.green,
-            frame,
-        ));
+        lines.push(s.paint_finale_gradient(&format!("{padding}╔{bar}╗"), &t.green, frame));
         lines.push(s.paint_finale_gradient(
             &format!("{padding}║ {padded_token} ║"),
             &t.sparkle,
             frame,
         ));
-        lines.push(s.paint_finale_gradient(
-            &format!("{padding}╚{bar}╝"),
-            &t.green,
-            frame,
-        ));
+        lines.push(s.paint_finale_gradient(&format!("{padding}╚{bar}╝"), &t.green, frame));
     } else {
         // Simpler pre-reveal line
         let reveal_chars = (frame * token.len()).min(token.len() * 2) / 2;
@@ -509,10 +556,7 @@ fn build_beer_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
                 1 => "o",
                 _ => "·",
             };
-            out.push_str(&s.paint(
-                t.foam[(frame + col) % t.foam.len()],
-                bubble_char,
-            ));
+            out.push_str(&s.paint(t.foam[(frame + col) % t.foam.len()], bubble_char));
         } else {
             // Beer amber fill with subtle variation
             let fill_char = match (frame + col + row as usize) % 5 {
@@ -543,10 +587,7 @@ fn build_foam_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
             4 => "▒",
             _ => "░",
         };
-        out.push_str(&s.paint(
-            t.foam[(frame + col) % t.foam.len()],
-            foam_char,
-        ));
+        out.push_str(&s.paint(t.foam[(frame + col) % t.foam.len()], foam_char));
     }
     out
 }
@@ -566,16 +607,29 @@ fn build_sparkle_line(s: &Style, t: &FinaleTheme, frame: usize, width: usize) ->
     out
 }
 
-// ── Batch action preview ─────────────────────────────────────────────
+pub fn print_batch_query_progress(action: &str, query: &str, index: usize, total: usize) {
+    println!(
+        "{}",
+        style().frame_title_for(action, "🧭", &format!("Resolve match {index} of {total}"))
+    );
+    println!("{} {}", style().meta_label("query"), style().token(query));
+    println!(
+        "{}",
+        style().dim(&format!(
+            "Lock this package in before brau moves on to the next {action} query."
+        ))
+    );
+    println!();
+}
 
-pub fn print_batch_action_preview(action: &str, packages: &[&Package]) {
+pub fn print_batch_review(action: &str, packages: &[(&str, &Package)]) {
     let s = style();
 
     println!(
         "{}",
         s.frame_title_for(
             action,
-            "✨",
+            "🧺",
             &format!(
                 "Ready to {} {} package{}",
                 action,
@@ -587,8 +641,8 @@ pub fn print_batch_action_preview(action: &str, packages: &[&Package]) {
 
     println!("{}", s.winner_rule());
 
-    for (i, package) in packages.iter().enumerate() {
-        let mut title = format!("  {}", format_title(package, false));
+    for (i, (query, package)) in packages.iter().enumerate() {
+        let mut title = format!("{} {}", s.list_index(i + 1), format_title(package, false));
         if let Some(version) = package.version.as_deref() {
             title.push_str("  ");
             title.push_str(&s.version(version));
@@ -599,6 +653,12 @@ pub fn print_batch_action_preview(action: &str, packages: &[&Package]) {
         }
 
         println!("{} {}", s.winner_pipe(), title);
+        println!(
+            "{}    {} {}",
+            s.winner_pipe(),
+            s.meta_label("query"),
+            s.token(query)
+        );
         println!("{}    {}", s.winner_pipe(), s.body(&package.desc));
 
         if i + 1 < packages.len() {
@@ -612,7 +672,10 @@ pub fn print_batch_action_preview(action: &str, packages: &[&Package]) {
         "{}",
         s.frame_footer_for(
             action,
-            &format!("press y to {} all, or n to cancel", action)
+            &format!(
+                "1 {} all  ·  2 search all again  ·  3 search one again  ·  4 cancel",
+                action
+            )
         )
     );
     println!();
@@ -695,11 +758,7 @@ fn build_blender_frame(
             r#"             ~ ≈ ~"#,
         ];
         if blend_level >= 5 {
-            lines.push(s.paint_finale_gradient(
-                steam[frame % steam.len()],
-                &t.foam,
-                frame,
-            ));
+            lines.push(s.paint_finale_gradient(steam[frame % steam.len()], &t.foam, frame));
         } else {
             lines.push(String::new());
         }
@@ -709,11 +768,7 @@ fn build_blender_frame(
             r#"          ∘    ·  ˚  ·  ✦  ˚"#,
             r#"            ·  ✦  ˚    ·  ∘"#,
         ];
-        lines.push(s.paint_finale_gradient(
-            drops[frame % drops.len()],
-            &t.sparkle,
-            frame,
-        ));
+        lines.push(s.paint_finale_gradient(drops[frame % drops.len()], &t.sparkle, frame));
     }
 
     // ── Container top rim ──
@@ -757,11 +812,7 @@ fn build_blender_frame(
     }
 
     // ── Container bottom ──
-    lines.push(s.paint_finale_gradient(
-        r#"          '===================='"#,
-        &t.teal,
-        frame,
-    ));
+    lines.push(s.paint_finale_gradient(r#"          '===================='"#, &t.teal, frame));
 
     // ── Package names banner ──
     if banner_reveal {
@@ -771,11 +822,7 @@ fn build_blender_frame(
         let bar = "═".repeat(bar_len);
         let padding = " ".repeat(52usize.saturating_sub(bar_len + 2) / 2);
 
-        lines.push(s.paint_finale_gradient(
-            &format!("{padding}╔{bar}╗"),
-            &t.green,
-            frame,
-        ));
+        lines.push(s.paint_finale_gradient(&format!("{padding}╔{bar}╗"), &t.green, frame));
         for (i, token) in tokens.iter().enumerate() {
             let label = format!("  ✦  {}  ✦", token);
             let pad_right = inner_width.saturating_sub(label.chars().count());
@@ -786,11 +833,7 @@ fn build_blender_frame(
                 frame + i,
             ));
         }
-        lines.push(s.paint_finale_gradient(
-            &format!("{padding}╚{bar}╝"),
-            &t.green,
-            frame,
-        ));
+        lines.push(s.paint_finale_gradient(&format!("{padding}╚{bar}╝"), &t.green, frame));
     } else {
         // Pre-reveal: blending progress bar
         let bar_chars = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
@@ -833,7 +876,8 @@ fn build_blender_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
         };
 
         // Cycle through ALL sparkle colors (6 shades) for a vibrant blend
-        let color_idx = (frame.wrapping_mul(2)
+        let color_idx = (frame
+            .wrapping_mul(2)
             .wrapping_add(col)
             .wrapping_add((row as usize).wrapping_mul(3)))
             % t.sparkle.len();
@@ -842,7 +886,6 @@ fn build_blender_inner(t: &FinaleTheme, frame: usize, row: u8) -> String {
     }
     out
 }
-
 
 pub fn print_help_screen() {
     println!("{}", style().frame_title_for("help", "🍺", "brau"));
@@ -1053,16 +1096,42 @@ pub fn print_action_candidates(
     matches: &[SearchMatch<'_>],
     footer: &str,
 ) {
-    println!(
-        "{}",
-        style().frame_title_for(action, "⚠️", &format!("Multiple matches for \"{query}\""))
+    print_candidate_panel(
+        action,
+        "⚠️",
+        &format!("Multiple matches for \"{query}\""),
+        &format!("Pick the package you want to {action} from the shortlist below."),
+        matches,
+        footer,
     );
-    println!(
-        "{}",
-        style().dim(&format!(
-            "Pick the package you want to {action} from the shortlist below."
-        ))
+}
+
+pub fn print_retry_candidates(
+    query: &str,
+    action: &str,
+    matches: &[SearchMatch<'_>],
+    footer: &str,
+) {
+    print_candidate_panel(
+        action,
+        "🪄",
+        &format!("More likely matches for \"{query}\""),
+        "The first guess was off, so here are the next most probable fuzzy matches.",
+        matches,
+        footer,
     );
+}
+
+fn print_candidate_panel(
+    action: &str,
+    icon: &str,
+    title: &str,
+    subtitle: &str,
+    matches: &[SearchMatch<'_>],
+    footer: &str,
+) {
+    println!("{}", style().frame_title_for(action, icon, title));
+    println!("{}", style().dim(subtitle));
     println!();
     print_match_list(matches, 1);
     println!();
@@ -1339,7 +1408,6 @@ fn charm_sprites(label: &str) -> &'static [&'static str] {
     }
 }
 
-
 fn print_catalog_warmup_note(kind: CatalogWarmupKind) {
     let spec = catalog_warmup_spec(kind);
     println!(
@@ -1525,8 +1593,6 @@ fn brew_command_mood(command: &str) -> BrewCommandMood {
     }
 }
 
-
-
 #[derive(Clone, Copy)]
 struct AccentPalette {
     primary: &'static str,
@@ -1671,7 +1737,7 @@ impl Style {
             } else {
                 target.to_string()
             };
-            format!(" {}", self.paint(palette.tertiary, &format!("\"{}\"" , t)))
+            format!(" {}", self.paint(palette.tertiary, &format!("\"{}\"", t)))
         };
 
         // Shimmer trail: cycling colored particles
@@ -1688,7 +1754,6 @@ impl Style {
             sprite_colored, bar_colored, step_colored, target_part, trail
         )
     }
-
 
     fn meta_label(&self, label: &str) -> String {
         let padded = format!("{label:>13}:");
@@ -1800,8 +1865,6 @@ impl Style {
         let palette = self.palette(label);
         self.paint(palette.primary, value)
     }
-
-
 
     fn motion_color(&self, label: &str, index: usize, value: &str) -> String {
         let code = match (label, index % 3) {
@@ -2070,7 +2133,11 @@ impl Style {
         let time_display = self.paint("38;5;109", &format!(" {time}"));
 
         // Icon
-        let icon_part = if self.fancy { format!("{icon} ") } else { String::new() };
+        let icon_part = if self.fancy {
+            format!("{icon} ")
+        } else {
+            String::new()
+        };
 
         // Colorful broom
         let broom_colored = self.paint_broom(broom_frame, tick);
@@ -2090,19 +2157,12 @@ impl Style {
 
         if used > width {
             // Compact mode: just icon + step + time
-            return format!(
-                "{}{}  {}",
-                icon_part, step_colored, time_display
-            );
+            return format!("{}{}  {}", icon_part, step_colored, time_display);
         }
 
         format!(
             "{}{}  {}  {}{}",
-            icon_part,
-            broom_colored,
-            step_colored,
-            dust,
-            time_display
+            icon_part, broom_colored, step_colored, dust, time_display
         )
     }
 

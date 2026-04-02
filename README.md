@@ -48,20 +48,13 @@ Before installing `brau`, make sure you have:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-## 🎉 Why `brau`?
-
-- **🧠 It reads your mind:** Fuzzy-searches both formulae and casks. Looking for `postgres` but the package is actually `postgresql@14`? No problem!
-- **⚡ Blazing fast:** Builds a local cache of Homebrew so you never have to wait for a slow `brew search` again.
-- **🎬 Dramatic flair:** Adds fun animations and ASCII finales to your everyday installs.
-- **🛠️ One CLI to rule them all:** Pass your regular Homebrew commands (`brau update`, `brau cleanup`) straight through!
-
 ## 🪄 Usage
 
 You can use `brau` exactly like you'd use `brew`. It just works better.
 
 **Find things:**
 ```bash
-brau postgres            # Wait, did you mean postgresql? Yes, we did.
+brau postgres            # Wait, did you mean postgresql? Yes, you did.
 brau vscode --cask       # Search specifically for casks
 ```
 

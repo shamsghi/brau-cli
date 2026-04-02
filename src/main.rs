@@ -19,6 +19,9 @@ use render::CatalogWarmupKind;
 use search::{search_catalog, MatchStrength, SearchMatch, SearchOptions};
 
 const BREW_COMMAND_CACHE_FILE: &str = "brew-commands-v1.txt";
+const ACTION_MATCH_LIMIT: usize = 5;
+const BATCH_MATCH_LIMIT: usize = 6;
+const BATCH_FUZZY_MATCH_LIMIT: usize = 8;
 const KNOWN_BREW_COMMANDS: &[&str] = &[
     "--cache",
     "--caskroom",
@@ -176,6 +179,32 @@ struct OutputChunk {
     bytes: Vec<u8>,
 }
 
+#[derive(Debug)]
+struct BatchResolvedPackage<'a> {
+    query: String,
+    package: &'a Package,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfirmedMatchChoice {
+    Accept,
+    SearchAgain,
+    Cancel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BatchReviewChoice {
+    Proceed,
+    RetryAll,
+    RetryOne,
+    Cancel,
+}
+
+enum MatchSelection {
+    Selected(usize),
+    Cancelled,
+}
+
 impl BrewAction {
     fn command(self) -> &'static str {
         match self {
@@ -228,6 +257,10 @@ impl BrewAction {
             Self::Install => "press y to install, or n to cancel",
             Self::Uninstall => "press y to uninstall, or n to cancel",
         }
+    }
+
+    fn batch_preview_footer(self) -> &'static str {
+        "press y to keep this match, n to search again, or q to cancel"
     }
 
     fn candidates_footer(self) -> &'static str {
@@ -647,11 +680,7 @@ fn run_search(
     limit: usize,
     motion: MotionSettings,
 ) -> Result<(), String> {
-    let matches = run_with_motion(
-        should_run_motion(motion),
-        || search_catalog(catalog, query, SearchOptions { scope, limit }),
-        || render::play_search_charm(query, motion.animations_enabled),
-    )?;
+    let matches = search_matches(catalog, query, scope, limit, motion)?;
     render::print_search_results(query, &matches);
 
     if matches.is_empty() {
@@ -669,12 +698,7 @@ fn run_info(
     scope: QueryScope,
     motion: MotionSettings,
 ) -> Result<(), String> {
-    let matches = run_with_motion(
-        should_run_motion(motion),
-        || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
-        || render::play_search_charm(query, motion.animations_enabled),
-    )?;
-
+    let matches = search_matches(catalog, query, scope, ACTION_MATCH_LIMIT, motion)?;
     let best = matches
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
@@ -705,12 +729,7 @@ fn run_action(
     motion: MotionSettings,
     action: BrewAction,
 ) -> Result<(), String> {
-    let matches = run_with_motion(
-        should_run_motion(motion),
-        || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
-        || render::play_search_charm(query, motion.animations_enabled),
-    )?;
-
+    let matches = search_matches(catalog, query, scope, ACTION_MATCH_LIMIT, motion)?;
     let best = matches
         .first()
         .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
@@ -773,62 +792,92 @@ fn run_batch_action(
     motion: MotionSettings,
     action: BrewAction,
 ) -> Result<(), String> {
-    // Phase 1: Resolve every query — abort on ambiguity
-    let mut resolved: Vec<&Package> = Vec::new();
-
-    for query in queries {
-        let matches = run_with_motion(
-            should_run_motion(motion),
-            || search_catalog(catalog, query, SearchOptions { scope, limit: 5 }),
-            || render::play_search_charm(query, motion.animations_enabled),
-        )?;
-
-        let best = matches
-            .first()
-            .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
-
-        if !is_confident(best, matches.get(1)) {
-            render::print_action_candidates(
-                query,
-                action.label(),
-                &matches,
-                action.candidates_footer(),
-            );
-            return Err(format!(
-                "The query \"{query}\" is ambiguous. Be more specific or {} each package individually.",
-                action.label()
-            ));
-        }
-
-        resolved.push(best.package);
+    if yes {
+        let resolved = resolve_batch_queries_without_prompt(catalog, queries, scope, action)?;
+        let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
+        return execute_batch_action(&packages, action, dry_run, motion);
     }
 
-    // Phase 2: Batch preview
-    render::print_batch_action_preview(action.label(), &resolved);
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Err(format!(
+            "Interactive batch {} requires a terminal. Use `--yes` with specific queries instead.",
+            action.present_participle()
+        ));
+    }
 
-    // Phase 3: Confirm
-    if !yes {
-        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-            return Err(format!(
-                "Interactive batch {} requires a terminal. Use `--yes` with specific queries instead.",
-                action.present_participle()
-            ));
-        }
+    let mut resolved =
+        match resolve_batch_queries_interactively(catalog, queries, scope, motion, action)? {
+            Some(resolved) => resolved,
+            None => {
+                println!("{} cancelled.", capitalize(action.label()));
+                return Ok(());
+            }
+        };
 
-        let prompt = format!(
-            "{} {} package{} now?",
-            capitalize(action.label()),
-            resolved.len(),
-            if resolved.len() == 1 { "" } else { "s" }
-        );
+    loop {
+        let preview = resolved
+            .iter()
+            .map(|item| (item.query.as_str(), item.package))
+            .collect::<Vec<_>>();
+        render::print_batch_review(action.label(), &preview);
 
-        if !prompt_yes_no(&prompt)? {
-            println!("{} cancelled.", capitalize(action.label()));
-            return Ok(());
+        match prompt_batch_review_choice()? {
+            BatchReviewChoice::Proceed => break,
+            BatchReviewChoice::RetryAll => {
+                resolved = match resolve_batch_queries_interactively(
+                    catalog, queries, scope, motion, action,
+                )? {
+                    Some(resolved) => resolved,
+                    None => {
+                        println!("{} cancelled.", capitalize(action.label()));
+                        return Ok(());
+                    }
+                };
+            }
+            BatchReviewChoice::RetryOne => {
+                let Some(index) = prompt_batch_retry_selection(resolved.len())? else {
+                    continue;
+                };
+                let query = resolved[index].query.clone();
+                let package = match resolve_batch_query_interactively(
+                    catalog,
+                    &query,
+                    scope,
+                    motion,
+                    action,
+                    index + 1,
+                    queries.len(),
+                )? {
+                    Some(package) => package,
+                    None => {
+                        println!("{} cancelled.", capitalize(action.label()));
+                        return Ok(());
+                    }
+                };
+                resolved[index].package = package;
+            }
+            BatchReviewChoice::Cancel => {
+                println!("{} cancelled.", capitalize(action.label()));
+                return Ok(());
+            }
         }
     }
 
-    // Phase 4: Execute each — suppress individual finales
+    let packages = resolved.iter().map(|item| item.package).collect::<Vec<_>>();
+    execute_batch_action(&packages, action, dry_run, motion)
+}
+
+fn execute_batch_action(
+    resolved: &[&Package],
+    action: BrewAction,
+    dry_run: bool,
+    motion: MotionSettings,
+) -> Result<(), String> {
+    if resolved.is_empty() {
+        return Ok(());
+    }
+
+    // Suppress individual finales so the combined batch finale lands once at the end.
     let batch_motion = MotionSettings {
         animations_enabled: motion.animations_enabled,
         finale_enabled: false,
@@ -837,22 +886,16 @@ fn run_batch_action(
     let mut succeeded: Vec<&Package> = Vec::new();
     let mut failed: Vec<(&Package, String)> = Vec::new();
 
-    for package in &resolved {
+    for package in resolved {
         match execute_brew_action(package, action, dry_run, batch_motion) {
             Ok(()) => succeeded.push(package),
             Err(error) => {
-                eprintln!(
-                    "Failed to {} {}: {}",
-                    action.label(),
-                    package.token,
-                    error
-                );
+                eprintln!("Failed to {} {}: {}", action.label(), package.token, error);
                 failed.push((package, error));
             }
         }
     }
 
-    // Phase 5: Combined finale
     if action.should_celebrate() && motion.finale_enabled && !dry_run && !succeeded.is_empty() {
         let tokens: Vec<&str> = succeeded.iter().map(|p| p.token.as_str()).collect();
         render::play_batch_install_finale(&tokens, true);
@@ -874,6 +917,131 @@ fn run_batch_action(
     }
 
     Ok(())
+}
+
+fn resolve_batch_queries_without_prompt<'a>(
+    catalog: &'a Catalog,
+    queries: &[String],
+    scope: QueryScope,
+    action: BrewAction,
+) -> Result<Vec<BatchResolvedPackage<'a>>, String> {
+    let mut resolved = Vec::with_capacity(queries.len());
+
+    for query in queries {
+        let matches = search_catalog(
+            catalog,
+            query,
+            SearchOptions {
+                scope,
+                limit: ACTION_MATCH_LIMIT,
+            },
+        );
+
+        let best = matches
+            .first()
+            .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
+        if !is_confident(best, matches.get(1)) {
+            return Err(format!(
+                "The query \"{query}\" is ambiguous. Be more specific or {} each package individually.",
+                action.label()
+            ));
+        }
+        let package = best.package;
+
+        resolved.push(BatchResolvedPackage {
+            query: query.clone(),
+            package,
+        });
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_batch_queries_interactively<'a>(
+    catalog: &'a Catalog,
+    queries: &[String],
+    scope: QueryScope,
+    motion: MotionSettings,
+    action: BrewAction,
+) -> Result<Option<Vec<BatchResolvedPackage<'a>>>, String> {
+    let mut resolved = Vec::with_capacity(queries.len());
+
+    for (index, query) in queries.iter().enumerate() {
+        let package = match resolve_batch_query_interactively(
+            catalog,
+            query,
+            scope,
+            motion,
+            action,
+            index + 1,
+            queries.len(),
+        )? {
+            Some(package) => package,
+            None => return Ok(None),
+        };
+
+        resolved.push(BatchResolvedPackage {
+            query: query.clone(),
+            package,
+        });
+    }
+
+    Ok(Some(resolved))
+}
+
+fn resolve_batch_query_interactively<'a>(
+    catalog: &'a Catalog,
+    query: &str,
+    scope: QueryScope,
+    motion: MotionSettings,
+    action: BrewAction,
+    index: usize,
+    total: usize,
+) -> Result<Option<&'a Package>, String> {
+    render::print_batch_query_progress(action.label(), query, index, total);
+
+    let matches = search_matches(catalog, query, scope, BATCH_MATCH_LIMIT, motion)?;
+    let best = matches
+        .first()
+        .ok_or_else(|| format!("No Homebrew packages matched \"{query}\"."))?;
+
+    if is_confident(best, matches.get(1)) {
+        let package = best.package;
+        render::print_action_preview(
+            query,
+            action.preview_title(),
+            package,
+            best,
+            action.batch_preview_footer(),
+        );
+
+        return match prompt_confirmed_match_choice()? {
+            ConfirmedMatchChoice::Accept => Ok(Some(package)),
+            ConfirmedMatchChoice::SearchAgain => {
+                let fuzzy_matches =
+                    search_matches(catalog, query, scope, BATCH_FUZZY_MATCH_LIMIT, motion)?;
+                render::print_retry_candidates(
+                    query,
+                    action.label(),
+                    &fuzzy_matches,
+                    action.candidates_footer(),
+                );
+
+                match prompt_match_selection_choice(&fuzzy_matches)? {
+                    MatchSelection::Selected(index) => Ok(Some(fuzzy_matches[index].package)),
+                    MatchSelection::Cancelled => Ok(None),
+                }
+            }
+            ConfirmedMatchChoice::Cancel => Ok(None),
+        };
+    }
+
+    render::print_action_candidates(query, action.label(), &matches, action.candidates_footer());
+
+    match prompt_match_selection_choice(&matches)? {
+        MatchSelection::Selected(index) => Ok(Some(matches[index].package)),
+        MatchSelection::Cancelled => Ok(None),
+    }
 }
 
 fn execute_brew_action(
@@ -1007,6 +1175,20 @@ fn brew_command_cache_path() -> Result<PathBuf, String> {
     Ok(catalog::cache_dir()?.join(BREW_COMMAND_CACHE_FILE))
 }
 
+fn search_matches<'a>(
+    catalog: &'a Catalog,
+    query: &str,
+    scope: QueryScope,
+    limit: usize,
+    motion: MotionSettings,
+) -> Result<Vec<SearchMatch<'a>>, String> {
+    run_with_motion(
+        should_run_motion(motion),
+        || search_catalog(catalog, query, SearchOptions { scope, limit }),
+        || render::play_search_charm(query, motion.animations_enabled),
+    )
+}
+
 fn is_confident(best: &SearchMatch<'_>, next: Option<&SearchMatch<'_>>) -> bool {
     match best.strength {
         MatchStrength::Exact => true,
@@ -1038,9 +1220,102 @@ fn prompt_yes_no(prompt: &str) -> Result<bool, String> {
     }
 }
 
+fn parse_confirmed_match_choice(input: &str) -> Option<ConfirmedMatchChoice> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "" | "y" | "yes" => Some(ConfirmedMatchChoice::Accept),
+        "n" | "no" => Some(ConfirmedMatchChoice::SearchAgain),
+        "q" | "quit" | "cancel" => Some(ConfirmedMatchChoice::Cancel),
+        _ => None,
+    }
+}
+
+fn prompt_confirmed_match_choice() -> Result<ConfirmedMatchChoice, String> {
+    loop {
+        print!("Keep this package? [Y/n/q] ");
+        io::stdout()
+            .flush()
+            .map_err(|error| format!("Failed to flush stdout: {error}"))?;
+
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|error| format!("Failed to read your answer: {error}"))?;
+
+        if let Some(choice) = parse_confirmed_match_choice(&answer) {
+            return Ok(choice);
+        }
+
+        println!("Please answer with `y`, `n`, or `q`.");
+    }
+}
+
+fn parse_batch_review_choice(input: &str) -> Option<BatchReviewChoice> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "" | "1" => Some(BatchReviewChoice::Proceed),
+        "2" => Some(BatchReviewChoice::RetryAll),
+        "3" => Some(BatchReviewChoice::RetryOne),
+        "4" | "q" | "quit" | "cancel" => Some(BatchReviewChoice::Cancel),
+        _ => None,
+    }
+}
+
+fn prompt_batch_review_choice() -> Result<BatchReviewChoice, String> {
+    loop {
+        print!("Choose an option [1-4]: ");
+        io::stdout()
+            .flush()
+            .map_err(|error| format!("Failed to flush stdout: {error}"))?;
+
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|error| format!("Failed to read your answer: {error}"))?;
+
+        if let Some(choice) = parse_batch_review_choice(&answer) {
+            return Ok(choice);
+        }
+
+        println!("Please enter `1`, `2`, `3`, or `4`.");
+    }
+}
+
+fn prompt_batch_retry_selection(total: usize) -> Result<Option<usize>, String> {
+    loop {
+        print!("Pick a package to search again [1-{total} or q]: ");
+        io::stdout()
+            .flush()
+            .map_err(|error| format!("Failed to flush stdout: {error}"))?;
+
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|error| format!("Failed to read your answer: {error}"))?;
+
+        let trimmed = answer.trim();
+        if trimmed.eq_ignore_ascii_case("q") {
+            return Ok(None);
+        }
+
+        if let Ok(index) = trimmed.parse::<usize>() {
+            if (1..=total).contains(&index) {
+                return Ok(Some(index - 1));
+            }
+        }
+
+        println!("Please enter a number between 1 and {total}, or `q`.");
+    }
+}
+
 fn prompt_match_selection<'a>(
     matches: &'a [SearchMatch<'a>],
 ) -> Result<&'a SearchMatch<'a>, String> {
+    match prompt_match_selection_choice(matches)? {
+        MatchSelection::Selected(index) => Ok(&matches[index]),
+        MatchSelection::Cancelled => Err("Action cancelled.".to_string()),
+    }
+}
+
+fn prompt_match_selection_choice(matches: &[SearchMatch<'_>]) -> Result<MatchSelection, String> {
     loop {
         print!("Choose a package [1-{} or q]: ", matches.len());
         io::stdout()
@@ -1054,12 +1329,14 @@ fn prompt_match_selection<'a>(
 
         let trimmed = answer.trim();
         if trimmed.eq_ignore_ascii_case("q") {
-            return Err("Action cancelled.".to_string());
+            return Ok(MatchSelection::Cancelled);
         }
 
         if let Ok(index) = trimmed.parse::<usize>() {
-            if let Some(selected) = matches.get(index.saturating_sub(1)) {
-                return Ok(selected);
+            if let Some(zero_based) = index.checked_sub(1) {
+                if matches.get(zero_based).is_some() {
+                    return Ok(MatchSelection::Selected(zero_based));
+                }
             }
         }
 
@@ -1079,5 +1356,123 @@ fn capitalize(value: &str) -> String {
             result
         }
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::{Catalog, Package, PackageKind};
+    use crate::cli::QueryScope;
+
+    fn package(kind: PackageKind, token: &str, aliases: &[&str], desc: &str) -> Package {
+        Package {
+            kind,
+            token: token.to_string(),
+            full_token: token.to_string(),
+            display_names: Vec::new(),
+            aliases: aliases.iter().map(|value| value.to_string()).collect(),
+            old_names: Vec::new(),
+            desc: desc.to_string(),
+            homepage: None,
+            version: Some("1.0.0".to_string()),
+            tap: None,
+            license: None,
+            dependencies: Vec::new(),
+            installed: false,
+            outdated: false,
+            deprecated: false,
+            disabled: false,
+            auto_updates: false,
+        }
+    }
+
+    #[test]
+    fn resolve_batch_queries_without_prompt_accepts_clear_matches() {
+        let catalog = Catalog {
+            generated_at: 0,
+            brew_state: None,
+            items: vec![
+                package(
+                    PackageKind::Formula,
+                    "ripgrep",
+                    &["rg"],
+                    "Search tool like grep",
+                ),
+                package(PackageKind::Formula, "bat", &[], "Cat clone with wings"),
+            ],
+        };
+
+        let queries = vec!["rg".to_string(), "bat".to_string()];
+        let resolved = resolve_batch_queries_without_prompt(
+            &catalog,
+            &queries,
+            QueryScope::All,
+            BrewAction::Install,
+        )
+        .expect("clear matches should resolve");
+
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].package.token, "ripgrep");
+        assert_eq!(resolved[1].package.token, "bat");
+    }
+
+    #[test]
+    fn resolve_batch_queries_without_prompt_rejects_ambiguous_matches() {
+        let catalog = Catalog {
+            generated_at: 0,
+            brew_state: None,
+            items: vec![
+                package(PackageKind::Formula, "foo-tool", &[], "First foo package"),
+                package(PackageKind::Formula, "foo-bar", &[], "Second foo package"),
+            ],
+        };
+
+        let queries = vec!["foo".to_string()];
+        let error = resolve_batch_queries_without_prompt(
+            &catalog,
+            &queries,
+            QueryScope::All,
+            BrewAction::Install,
+        )
+        .expect_err("ambiguous matches should be rejected");
+
+        assert!(error.contains("ambiguous"));
+    }
+
+    #[test]
+    fn parse_confirmed_match_choice_supports_retry_and_cancel() {
+        assert_eq!(
+            parse_confirmed_match_choice(""),
+            Some(ConfirmedMatchChoice::Accept)
+        );
+        assert_eq!(
+            parse_confirmed_match_choice("n"),
+            Some(ConfirmedMatchChoice::SearchAgain)
+        );
+        assert_eq!(
+            parse_confirmed_match_choice("q"),
+            Some(ConfirmedMatchChoice::Cancel)
+        );
+    }
+
+    #[test]
+    fn parse_batch_review_choice_supports_all_menu_options() {
+        assert_eq!(
+            parse_batch_review_choice("1"),
+            Some(BatchReviewChoice::Proceed)
+        );
+        assert_eq!(
+            parse_batch_review_choice("2"),
+            Some(BatchReviewChoice::RetryAll)
+        );
+        assert_eq!(
+            parse_batch_review_choice("3"),
+            Some(BatchReviewChoice::RetryOne)
+        );
+        assert_eq!(
+            parse_batch_review_choice("q"),
+            Some(BatchReviewChoice::Cancel)
+        );
     }
 }
