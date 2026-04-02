@@ -8,7 +8,7 @@ mod render;
 mod search;
 
 use std::io::{self, IsTerminal};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -144,6 +144,9 @@ fn run() -> Result<(), String> {
     if app::is_hidden_easter_egg_command(&raw_args) {
         return unlock_bro_alias();
     }
+    if is_version_request(&raw_args) {
+        return print_version_summary();
+    }
 
     let cli = Cli::parse(raw_args)?;
     let motion = MotionSettings {
@@ -271,6 +274,25 @@ fn run() -> Result<(), String> {
             }
         }
         CommandKind::Brew { .. } | CommandKind::Refresh | CommandKind::Help => Ok(()),
+    }
+}
+
+fn is_version_request(args: &[String]) -> bool {
+    matches!(args, [flag] if matches!(flag.as_str(), "--version" | "-v"))
+}
+
+fn print_version_summary() -> Result<(), String> {
+    println!("{} {}", app::display_name(), app::version());
+
+    let status = Command::new("brew")
+        .arg("--version")
+        .status()
+        .map_err(|error| format!("Failed to launch Homebrew: {error}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Homebrew exited with status {status}."))
     }
 }
 
@@ -915,6 +937,20 @@ mod tests {
             disabled: false,
             auto_updates: false,
         }
+    }
+
+    #[test]
+    fn single_version_flag_is_detected() {
+        assert!(is_version_request(&["--version".to_string()]));
+        assert!(is_version_request(&["-v".to_string()]));
+        assert!(!is_version_request(&[
+            "--version".to_string(),
+            "--no-anim".to_string()
+        ]));
+        assert!(!is_version_request(&[
+            "brew".to_string(),
+            "--version".to_string()
+        ]));
     }
 
     #[test]

@@ -23,6 +23,10 @@ pub fn display_name() -> String {
     }
 }
 
+pub fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 pub fn is_hidden_easter_egg_command(args: &[String]) -> bool {
     args.len() == 1 && args[0] == EASTER_EGG_COMMAND
 }
