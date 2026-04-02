@@ -1050,7 +1050,7 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
             "`bro` didn't mew its way here. It was born with a positive canthal tilt, forward skull growth, and a name that already slapped. It mogged `brau` out of existence without breaking a sweat.",
             "HARDMAXXED FROM BIRTH. ARC SKIPPED.",
             "Nothing to do. `bro` was already mogging the entire filesystem.",
-            "positive canthal tilt since day one",
+            "hardmaxxed from birth, no arc required",
         )
     } else {
         (
@@ -1110,7 +1110,7 @@ pub fn print_bro_alias_unlock(path: &str, already_available: bool) {
         s.meta_label("swagger"),
         s.accent_text(
             "bro-unlock",
-            "identical internals, hunter eyes, positive canthal tilt, mogging other CLIs without trying"
+            "identical internals, hunter eyes, mogging other CLIs without trying"
         )
     );
     println!(
