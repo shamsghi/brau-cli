@@ -15,7 +15,7 @@ Every `brew` command you already know still works in `brau`, including aliases l
 
 ## 🚀 Installation
 
-`brau` installs through Homebrew itself using a custom brew tap. One command and you're done.
+`brau` installs through Homebrew itself using a custom brew tap on macOS and Linux. One command and you're done.
 
 ```bash
 brew install shamsghi/brau-cli/brau
@@ -31,11 +31,18 @@ brew install --HEAD shamsghi/brau-cli/brau
 > ```bash
 > /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 > ```
-> Then add it to your PATH so you can call `brew`:
+> Then load `brew shellenv` for your platform if the installer did not already do it:
 > ```bash
-> echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+> # Apple Silicon macOS
 > eval "$(/opt/homebrew/bin/brew shellenv)"
+>
+> # Intel macOS
+> eval "$(/usr/local/bin/brew shellenv)"
+>
+> # Linux
+> eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 > ```
+> Add the matching line from above to your shell profile (`~/.zprofile`, `~/.bashrc`, or similar) if you want it to persist across new shells.
 
 ---
 

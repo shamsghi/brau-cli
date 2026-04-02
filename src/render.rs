@@ -1311,39 +1311,74 @@ impl Style {
 /// COLUMNS env var, then to 80.
 fn terminal_width() -> usize {
     #[cfg(unix)]
-    {
-        #[repr(C)]
-        struct Winsize {
-            ws_row: u16,
-            ws_col: u16,
-            ws_xpixel: u16,
-            ws_ypixel: u16,
-        }
-
-        extern "C" {
-            fn ioctl(fd: i32, request: u64, ...) -> i32;
-        }
-
-        // TIOCGWINSZ on macOS = 0x40087468
-        const TIOCGWINSZ: u64 = 0x40087468;
-
-        let mut ws = Winsize {
-            ws_row: 0,
-            ws_col: 0,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-
-        let fd = io::stdout().as_raw_fd();
-        let ret = unsafe { ioctl(fd, TIOCGWINSZ, &mut ws as *mut Winsize) };
-        if ret == 0 && ws.ws_col > 0 {
-            return ws.ws_col as usize;
-        }
+    if let Some(width) = terminal_width_from_ioctl() {
+        return width;
     }
 
-    // Fallback: COLUMNS env var, then 80
+    columns_env_width()
+}
+
+#[cfg(unix)]
+fn terminal_width_from_ioctl() -> Option<usize> {
+    #[repr(C)]
+    struct Winsize {
+        ws_row: u16,
+        ws_col: u16,
+        ws_xpixel: u16,
+        ws_ypixel: u16,
+    }
+
+    extern "C" {
+        fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
+    }
+
+    let request = terminal_width_ioctl_request()?;
+    let mut ws = Winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+
+    let fd = io::stdout().as_raw_fd();
+    // Safety: we pass a valid stdout file descriptor, the platform's TIOCGWINSZ
+    // request code, and a pointer to an initialized Winsize buffer for ioctl to fill.
+    let ret = unsafe { ioctl(fd, request, &mut ws as *mut Winsize) };
+    (ret == 0 && ws.ws_col > 0).then_some(ws.ws_col as usize)
+}
+
+#[cfg(unix)]
+fn terminal_width_ioctl_request() -> Option<std::ffi::c_ulong> {
+    if cfg!(any(target_os = "linux", target_os = "android")) {
+        Some(0x5413)
+    } else if cfg!(target_os = "macos") {
+        Some(0x4008_7468)
+    } else {
+        None
+    }
+}
+
+fn columns_env_width() -> usize {
     env::var("COLUMNS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(80)
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    use super::terminal_width_ioctl_request;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_uses_linux_terminal_width_ioctl_request() {
+        assert_eq!(terminal_width_ioctl_request(), Some(0x5413));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_uses_macos_terminal_width_ioctl_request() {
+        assert_eq!(terminal_width_ioctl_request(), Some(0x4008_7468));
+    }
 }
