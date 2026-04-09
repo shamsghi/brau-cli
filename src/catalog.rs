@@ -243,16 +243,14 @@ pub fn load_catalog(options: LoadOptions) -> Result<CatalogLoad, String> {
     let cache_path = cache_path()?;
     let inspection = inspect_catalog_cache_at_path(&cache_path)?;
 
-    if !options.force_refresh {
-        if inspection.freshness == CatalogFreshness::Fresh {
-            return Ok(CatalogLoad {
-                catalog: inspection
-                    .catalog
-                    .ok_or_else(|| "Fresh cache is missing catalog contents.".to_string())?,
-                source: CatalogLoadSource::Cache,
-                warning: None,
-            });
-        }
+    if !options.force_refresh && inspection.freshness == CatalogFreshness::Fresh {
+        return Ok(CatalogLoad {
+            catalog: inspection
+                .catalog
+                .ok_or_else(|| "Fresh cache is missing catalog contents.".to_string())?,
+            source: CatalogLoadSource::Cache,
+            warning: None,
+        });
     }
 
     match refresh_catalog_at_path(&cache_path) {
