@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "brau"
-version = "2.2.5"
+version = "2.2.6"
 dependencies = [
  "serde",
  "serde_json",
