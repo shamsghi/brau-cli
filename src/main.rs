@@ -7,15 +7,19 @@ mod prompt;
 mod render;
 mod search;
 
+use std::env;
 use std::io::{self, IsTerminal};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use app::BroAliasStatus;
 use brew::{brew_command_display, refresh_brew_command_cache, run_brew_command};
-use catalog::{CacheStatus, Catalog, CatalogLoad, CatalogLoadSource, Package, PackageKind};
+use catalog::{
+    Catalog, CatalogFreshness, CatalogLoad, CatalogLoadSource, Package, PackageKind, RefreshLock,
+    RefreshLockAcquire,
+};
 use cli::{Cli, CommandKind, QueryScope};
 use motion::{run_with_motion, should_run_motion, MotionSettings};
 use prompt::{
@@ -29,6 +33,9 @@ use search::{search_catalog, MatchStrength, SearchMatch, SearchOptions};
 const ACTION_MATCH_LIMIT: usize = 5;
 const BATCH_MATCH_LIMIT: usize = 6;
 const BATCH_FUZZY_MATCH_LIMIT: usize = 8;
+const BACKGROUND_REFRESH_ENV: &str = "BRAU_BACKGROUND_REFRESH";
+const BACKGROUND_REFRESH_KIND_CATALOG: &str = "catalog";
+const BACKGROUND_REFRESH_STARTED_AT_ENV: &str = "BRAU_BACKGROUND_REFRESH_STARTED_AT";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BrewAction {
@@ -140,6 +147,10 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
+    if is_background_catalog_refresh() {
+        return run_background_catalog_refresh();
+    }
+
     let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
     if app::is_hidden_easter_egg_command(&raw_args) {
         return unlock_bro_alias();
@@ -160,16 +171,7 @@ fn run() -> Result<(), String> {
             return Ok(());
         }
         CommandKind::Refresh => {
-            let (load, _) = load_catalog_with_feedback(
-                catalog::LoadOptions {
-                    force_refresh: true,
-                    allow_stale_fallback: false,
-                },
-                motion,
-            )?;
-            if let Err(error) = refresh_brew_command_cache() {
-                eprintln!("Warning: could not refresh brew command cache: {error}");
-            }
+            let load = run_manual_refresh(motion)?;
             println!(
                 "Cached {} packages ({} formulae, {} casks).",
                 load.catalog.total_count(),
@@ -192,31 +194,22 @@ fn run() -> Result<(), String> {
         | CommandKind::Uninstall { .. } => {}
     }
 
-    let (load, load_reason) = load_catalog_with_feedback(
-        catalog::LoadOptions {
-            force_refresh: cli.force_refresh,
-            allow_stale_fallback: true,
-        },
-        motion,
-    )?;
+    let (load, load_reason) = load_catalog_for_command(cli.force_refresh, motion)?;
 
     match load.source {
-        CatalogLoadSource::Refreshed => {
-            if let Err(error) = refresh_brew_command_cache() {
-                eprintln!("Warning: could not refresh brew command cache: {error}");
-            }
-
-            match load_reason {
-                Some(CatalogLoadReason::FirstRun) => eprintln!(
-                    "Built local Homebrew catalog ({} packages).",
-                    load.catalog.total_count()
-                ),
-                _ => eprintln!(
-                    "Refreshed Homebrew catalog ({} packages).",
-                    load.catalog.total_count()
-                ),
-            }
-        }
+        CatalogLoadSource::Refreshed => match load_reason {
+            Some(CatalogLoadReason::FirstRun) => eprintln!(
+                "Built local Homebrew catalog ({} packages).",
+                load.catalog.total_count()
+            ),
+            _ => eprintln!(
+                "Refreshed Homebrew catalog ({} packages).",
+                load.catalog.total_count()
+            ),
+        },
+        CatalogLoadSource::StaleWhileRefreshing => eprintln!(
+            "Using the saved catalog while Homebrew metadata refreshes in the background."
+        ),
         CatalogLoadSource::StaleFallback => {
             if let Some(warning) = load.warning.as_deref() {
                 eprintln!("Using a stale cache because refresh failed: {warning}");
@@ -296,18 +289,172 @@ fn print_version_summary() -> Result<(), String> {
     }
 }
 
-fn load_catalog_with_feedback(
-    options: catalog::LoadOptions,
+fn is_background_catalog_refresh() -> bool {
+    matches!(
+        env::var(BACKGROUND_REFRESH_ENV).as_deref(),
+        Ok(BACKGROUND_REFRESH_KIND_CATALOG)
+    )
+}
+
+fn run_background_catalog_refresh() -> Result<(), String> {
+    let started_at = env::var(BACKGROUND_REFRESH_STARTED_AT_ENV)
+        .map_err(|_| "Missing background refresh start time.".to_string())?
+        .parse::<u64>()
+        .map_err(|_| "Invalid background refresh start time.".to_string())?;
+    let lock = catalog::activate_background_refresh(started_at)?;
+    let result = perform_locked_catalog_refresh(catalog::LoadOptions {
+        force_refresh: true,
+        allow_stale_fallback: false,
+    });
+    let finish_error = result.as_ref().err().cloned();
+    catalog::finish_refresh(&lock, finish_error)?;
+    result.map(|_| ())
+}
+
+fn run_manual_refresh(motion: MotionSettings) -> Result<CatalogLoad, String> {
+    match catalog::acquire_refresh_lock()? {
+        RefreshLockAcquire::Acquired(lock) => run_locked_catalog_refresh_with_feedback(
+            lock,
+            catalog::LoadOptions {
+                force_refresh: true,
+                allow_stale_fallback: false,
+            },
+            CatalogLoadReason::ManualRefresh,
+            motion,
+        )
+        .map(|(load, _)| load),
+        RefreshLockAcquire::Busy(lock) => {
+            eprintln!("A catalog refresh is already running. Waiting for it to finish...");
+            wait_for_existing_refresh(&lock)
+        }
+    }
+}
+
+fn load_catalog_for_command(
+    force_refresh: bool,
     motion: MotionSettings,
 ) -> Result<(CatalogLoad, Option<CatalogLoadReason>), String> {
-    let reason = expected_catalog_load_reason(options.force_refresh)?;
-    let Some(reason) = reason else {
-        return Ok((catalog::load_catalog(options)?, None));
-    };
+    if force_refresh {
+        return blocking_refresh_catalog(CatalogLoadReason::ManualRefresh, true, motion);
+    }
+
+    let inspection = catalog::inspect_catalog_cache()?;
+    match inspection.freshness {
+        CatalogFreshness::Fresh => Ok((
+            CatalogLoad {
+                catalog: inspection
+                    .catalog
+                    .ok_or_else(|| "Fresh cache is missing catalog contents.".to_string())?,
+                source: CatalogLoadSource::Cache,
+                warning: None,
+            },
+            None,
+        )),
+        CatalogFreshness::UsableStale => {
+            let catalog = inspection
+                .catalog
+                .ok_or_else(|| "Stale cache is missing catalog contents.".to_string())?;
+            let load = match maybe_spawn_background_refresh() {
+                Ok(()) => CatalogLoad {
+                    catalog,
+                    source: CatalogLoadSource::StaleWhileRefreshing,
+                    warning: None,
+                },
+                Err(error) => CatalogLoad {
+                    catalog,
+                    source: CatalogLoadSource::StaleFallback,
+                    warning: Some(error),
+                },
+            };
+            Ok((load, None))
+        }
+        CatalogFreshness::Missing => {
+            blocking_refresh_catalog(CatalogLoadReason::FirstRun, false, motion)
+        }
+        CatalogFreshness::Incompatible => {
+            blocking_refresh_catalog(CatalogLoadReason::StaleRefresh, false, motion)
+        }
+    }
+}
+
+fn blocking_refresh_catalog(
+    reason: CatalogLoadReason,
+    allow_stale_fallback: bool,
+    motion: MotionSettings,
+) -> Result<(CatalogLoad, Option<CatalogLoadReason>), String> {
+    match catalog::acquire_refresh_lock()? {
+        RefreshLockAcquire::Acquired(lock) => run_locked_catalog_refresh_with_feedback(
+            lock,
+            catalog::LoadOptions {
+                force_refresh: true,
+                allow_stale_fallback,
+            },
+            reason,
+            motion,
+        ),
+        RefreshLockAcquire::Busy(lock) => {
+            wait_for_existing_refresh(&lock).map(|load| (load, Some(reason)))
+        }
+    }
+}
+
+fn maybe_spawn_background_refresh() -> Result<(), String> {
+    match catalog::acquire_refresh_lock()? {
+        RefreshLockAcquire::Busy(_) => Ok(()),
+        RefreshLockAcquire::Acquired(lock) => {
+            let executable = env::current_exe().map_err(|error| {
+                format!("Failed to resolve the current brau executable: {error}")
+            })?;
+            let child = Command::new(executable)
+                .env(BACKGROUND_REFRESH_ENV, BACKGROUND_REFRESH_KIND_CATALOG)
+                .env(
+                    BACKGROUND_REFRESH_STARTED_AT_ENV,
+                    lock.started_at.to_string(),
+                )
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| {
+                    format!("Failed to start the background catalog refresh: {error}")
+                })?;
+
+            catalog::handoff_refresh_lock(&lock, child.id()).map(|_| ())
+        }
+    }
+}
+
+fn wait_for_existing_refresh(lock: &RefreshLock) -> Result<CatalogLoad, String> {
+    let status = catalog::wait_for_refresh(lock)?;
+    status.result_for(lock)?;
+
+    let inspection = catalog::inspect_catalog_cache()?;
+    if inspection.freshness != CatalogFreshness::Fresh {
+        return Err(
+            "The catalog refresh completed without leaving behind a fresh cache.".to_string(),
+        );
+    }
+
+    Ok(CatalogLoad {
+        catalog: inspection
+            .catalog
+            .ok_or_else(|| "The refreshed catalog is missing cache contents.".to_string())?,
+        source: CatalogLoadSource::Refreshed,
+        warning: None,
+    })
+}
+
+fn run_locked_catalog_refresh_with_feedback(
+    lock: RefreshLock,
+    options: catalog::LoadOptions,
+    reason: CatalogLoadReason,
+    motion: MotionSettings,
+) -> Result<(CatalogLoad, Option<CatalogLoadReason>), String> {
+    catalog::mark_refresh_started(&lock)?;
 
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let result = catalog::load_catalog(options);
+        let result = perform_locked_catalog_refresh(options);
         let _ = sender.send(result);
     });
 
@@ -318,7 +465,7 @@ fn load_catalog_with_feedback(
         match receiver.recv_timeout(Duration::from_millis(140)) {
             Ok(result) => {
                 render::finish_catalog_warmup(motion.animations_enabled);
-                return result.map(|load| (load, Some(reason)));
+                return finish_locked_refresh(lock, result, reason);
             }
             Err(RecvTimeoutError::Timeout) => {
                 render::draw_catalog_warmup_tick(
@@ -330,21 +477,40 @@ fn load_catalog_with_feedback(
                 tick += 1;
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err("The catalog loader stopped unexpectedly.".to_string());
+                render::finish_catalog_warmup(motion.animations_enabled);
+                return finish_locked_refresh(
+                    lock,
+                    Err("The catalog loader stopped unexpectedly.".to_string()),
+                    reason,
+                );
             }
         }
     }
 }
 
-fn expected_catalog_load_reason(force_refresh: bool) -> Result<Option<CatalogLoadReason>, String> {
-    let status = catalog::cache_status()?;
+fn perform_locked_catalog_refresh(options: catalog::LoadOptions) -> Result<CatalogLoad, String> {
+    let load = catalog::load_catalog(options)?;
+    if matches!(load.source, CatalogLoadSource::Refreshed) {
+        if let Err(error) = refresh_brew_command_cache() {
+            eprintln!("Warning: could not refresh brew command cache: {error}");
+        }
+    }
+    Ok(load)
+}
 
-    Ok(match (force_refresh, status) {
-        (true, _) => Some(CatalogLoadReason::ManualRefresh),
-        (false, CacheStatus::Missing) => Some(CatalogLoadReason::FirstRun),
-        (false, CacheStatus::Stale) => Some(CatalogLoadReason::StaleRefresh),
-        (false, CacheStatus::Fresh) => None,
-    })
+fn finish_locked_refresh(
+    lock: RefreshLock,
+    result: Result<CatalogLoad, String>,
+    reason: CatalogLoadReason,
+) -> Result<(CatalogLoad, Option<CatalogLoadReason>), String> {
+    let finish_error = result.as_ref().err().cloned();
+    match catalog::finish_refresh(&lock, finish_error) {
+        Ok(()) => result.map(|load| (load, Some(reason))),
+        Err(lock_error) => match result {
+            Ok(_) => Err(lock_error),
+            Err(error) => Err(format!("{error}\n{lock_error}")),
+        },
+    }
 }
 
 fn unlock_bro_alias() -> Result<(), String> {
@@ -835,6 +1001,11 @@ fn execute_brew_action(
     })?;
 
     if status.success() {
+        if let Err(error) =
+            catalog::patch_cached_package(package, matches!(action, BrewAction::Install))
+        {
+            eprintln!("Warning: could not update the cached package state: {error}");
+        }
         if action.should_celebrate() && motion.finale_enabled {
             render::play_install_finale(package, true);
         }

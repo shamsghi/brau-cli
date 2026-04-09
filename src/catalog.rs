@@ -1,9 +1,11 @@
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -11,6 +13,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 const CACHE_FILE_NAME: &str = "catalog-v1.json";
 const CATALOG_FORMAT_VERSION: u32 = 2;
 const CACHE_MAX_AGE: Duration = Duration::from_secs(12 * 60 * 60);
+const REFRESH_LOCK_FILE_NAME: &str = "catalog-refresh.lock";
+const REFRESH_STATUS_FILE_NAME: &str = "catalog-refresh-status.json";
+const REFRESH_LOCK_MAX_AGE: Duration = Duration::from_secs(30 * 60);
+const REFRESH_WAIT_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -173,14 +179,16 @@ pub struct LoadOptions {
 pub enum CatalogLoadSource {
     Cache,
     Refreshed,
+    StaleWhileRefreshing,
     StaleFallback,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CacheStatus {
+pub enum CatalogFreshness {
     Missing,
+    Incompatible,
     Fresh,
-    Stale,
+    UsableStale,
 }
 
 #[derive(Debug)]
@@ -190,27 +198,75 @@ pub struct CatalogLoad {
     pub warning: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct CacheInspection {
+    pub freshness: CatalogFreshness,
+    pub catalog: Option<Catalog>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RefreshLock {
+    pub pid: u32,
+    pub started_at: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RefreshStatus {
+    #[serde(default)]
+    pub last_started_at: Option<u64>,
+    #[serde(default)]
+    pub last_completed_at: Option<u64>,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RefreshLockAcquire {
+    Acquired(RefreshLock),
+    Busy(RefreshLock),
+}
+
+impl RefreshStatus {
+    pub fn result_for(&self, lock: &RefreshLock) -> Result<(), String> {
+        if self.last_started_at != Some(lock.started_at) || self.last_completed_at.is_none() {
+            return Err("The catalog refresh ended without recording a result.".to_string());
+        }
+
+        match &self.last_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
+    }
+}
+
 pub fn load_catalog(options: LoadOptions) -> Result<CatalogLoad, String> {
     let cache_path = cache_path()?;
+    let inspection = inspect_catalog_cache_at_path(&cache_path)?;
 
     if !options.force_refresh {
-        if let Some(catalog) = read_cache_if_fresh(&cache_path)? {
+        if inspection.freshness == CatalogFreshness::Fresh {
             return Ok(CatalogLoad {
-                catalog,
+                catalog: inspection
+                    .catalog
+                    .ok_or_else(|| "Fresh cache is missing catalog contents.".to_string())?,
                 source: CatalogLoadSource::Cache,
                 warning: None,
             });
         }
     }
 
-    match refresh_catalog(&cache_path) {
+    match refresh_catalog_at_path(&cache_path) {
         Ok(catalog) => Ok(CatalogLoad {
             catalog,
             source: CatalogLoadSource::Refreshed,
             warning: None,
         }),
-        Err(error) if options.allow_stale_fallback => {
-            let catalog = read_cache_any(&cache_path)?
+        Err(error)
+            if options.allow_stale_fallback
+                && inspection.freshness == CatalogFreshness::UsableStale =>
+        {
+            let catalog = inspection
+                .catalog
                 .ok_or_else(|| format!("{error}\nNo cached package data is available yet."))?;
 
             Ok(CatalogLoad {
@@ -223,12 +279,173 @@ pub fn load_catalog(options: LoadOptions) -> Result<CatalogLoad, String> {
     }
 }
 
-pub fn cache_status() -> Result<CacheStatus, String> {
+pub fn inspect_catalog_cache() -> Result<CacheInspection, String> {
+    inspect_catalog_cache_at_path(&cache_path()?)
+}
+
+pub fn acquire_refresh_lock() -> Result<RefreshLockAcquire, String> {
+    let lock_path = refresh_lock_path()?;
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create refresh lock directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    loop {
+        let lock = RefreshLock {
+            pid: std::process::id(),
+            started_at: now_unix_timestamp(),
+        };
+
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => {
+                serde_json::to_writer(BufWriter::new(file), &lock)
+                    .map_err(|error| format!("Failed to serialize refresh lock: {error}"))?;
+                return Ok(RefreshLockAcquire::Acquired(lock));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let existing = match read_refresh_lock()? {
+                    Some(existing) => existing,
+                    None => continue,
+                };
+
+                if refresh_lock_is_reclaimable(&existing, now_unix_timestamp(), pid_is_running) {
+                    remove_refresh_lock_if_matches(&existing)?;
+                    continue;
+                }
+
+                return Ok(RefreshLockAcquire::Busy(existing));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Failed to create refresh lock {}: {error}",
+                    lock_path.display()
+                ))
+            }
+        }
+    }
+}
+
+pub fn handoff_refresh_lock(lock: &RefreshLock, pid: u32) -> Result<RefreshLock, String> {
+    let current = read_refresh_lock()?
+        .ok_or_else(|| "The refresh lock disappeared before handoff.".to_string())?;
+    if current.started_at != lock.started_at {
+        return Err("The refresh lock was replaced before handoff.".to_string());
+    }
+
+    let updated = RefreshLock {
+        pid,
+        started_at: lock.started_at,
+    };
+    write_refresh_lock(&updated)?;
+    Ok(updated)
+}
+
+pub fn activate_background_refresh(started_at: u64) -> Result<RefreshLock, String> {
+    let current = read_refresh_lock()?.ok_or_else(|| {
+        "The refresh lock disappeared before the background refresh started.".to_string()
+    })?;
+    if current.started_at != started_at {
+        return Err(
+            "The refresh lock was replaced before the background refresh started.".to_string(),
+        );
+    }
+
+    let lock = if current.pid == std::process::id() {
+        current
+    } else {
+        let updated = RefreshLock {
+            pid: std::process::id(),
+            started_at,
+        };
+        write_refresh_lock(&updated)?;
+        updated
+    };
+
+    mark_refresh_started(&lock)?;
+    Ok(lock)
+}
+
+pub fn wait_for_refresh(lock: &RefreshLock) -> Result<RefreshStatus, String> {
+    loop {
+        match read_refresh_lock()? {
+            Some(current) if current.started_at == lock.started_at => {
+                if refresh_lock_is_reclaimable(&current, now_unix_timestamp(), pid_is_running) {
+                    remove_refresh_lock_if_matches(&current)?;
+                    break;
+                }
+                thread::sleep(REFRESH_WAIT_INTERVAL);
+            }
+            Some(_) | None => break,
+        }
+    }
+
+    read_refresh_status()
+}
+
+pub fn mark_refresh_started(lock: &RefreshLock) -> Result<(), String> {
+    let mut status = read_refresh_status()?;
+    status.last_started_at = Some(lock.started_at);
+    status.last_error = None;
+    write_refresh_status(&status)
+}
+
+pub fn finish_refresh(lock: &RefreshLock, error: Option<String>) -> Result<(), String> {
+    let mut status = read_refresh_status()?;
+    status.last_started_at = Some(lock.started_at);
+    status.last_completed_at = Some(now_unix_timestamp());
+    status.last_error = error;
+    write_refresh_status(&status)?;
+    remove_refresh_lock_if_matches(lock)
+}
+
+pub fn read_refresh_status() -> Result<RefreshStatus, String> {
+    let path = refresh_status_path()?;
+    let contents = match fs::read(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(RefreshStatus::default())
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to read refresh status {}: {error}",
+                path.display()
+            ))
+        }
+    };
+
+    serde_json::from_slice(&contents)
+        .map_err(|error| format!("Failed to parse refresh status {}: {error}", path.display()))
+}
+
+pub fn patch_cached_package(package: &Package, installed: bool) -> Result<(), String> {
     let path = cache_path()?;
-    let metadata = match fs::metadata(&path) {
+    let Some(mut catalog) = read_cache_any(&path)? else {
+        return Ok(());
+    };
+
+    if !patch_catalog_package_state(&mut catalog, package, installed) {
+        return Ok(());
+    }
+
+    write_catalog_cache(&path, &catalog)
+}
+
+fn inspect_catalog_cache_at_path(path: &Path) -> Result<CacheInspection, String> {
+    let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(CacheStatus::Missing)
+            return Ok(CacheInspection {
+                freshness: CatalogFreshness::Missing,
+                catalog: None,
+            })
         }
         Err(error) => {
             return Err(format!(
@@ -249,14 +466,47 @@ pub fn cache_status() -> Result<CacheStatus, String> {
         .duration_since(modified)
         .unwrap_or_default();
 
-    Ok(if age <= CACHE_MAX_AGE {
-        CacheStatus::Fresh
-    } else {
-        CacheStatus::Stale
+    let contents = match fs::read(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(CacheInspection {
+                freshness: CatalogFreshness::Missing,
+                catalog: None,
+            })
+        }
+        Err(error) => return Err(format!("Failed to read cache {}: {error}", path.display())),
+    };
+
+    let catalog = match serde_json::from_slice::<Catalog>(&contents) {
+        Ok(catalog) => catalog,
+        Err(_) => {
+            return Ok(CacheInspection {
+                freshness: CatalogFreshness::Incompatible,
+                catalog: None,
+            })
+        }
+    };
+
+    let freshness = classify_cached_catalog(
+        &catalog,
+        age,
+        catalog
+            .brew_state
+            .as_ref()
+            .map(|state| brew_state_is_current(state).unwrap_or(false)),
+    );
+
+    Ok(CacheInspection {
+        freshness,
+        catalog: matches!(
+            freshness,
+            CatalogFreshness::Fresh | CatalogFreshness::UsableStale
+        )
+        .then_some(catalog),
     })
 }
 
-fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
+fn refresh_catalog_at_path(cache_path: &Path) -> Result<Catalog, String> {
     let output = Command::new("brew")
         .args(["info", "--json=v2", "--eval-all"])
         .output()
@@ -295,83 +545,13 @@ fn refresh_catalog(cache_path: &Path) -> Result<Catalog, String> {
         format_version: CATALOG_FORMAT_VERSION,
         host_platform: Some(host_platform),
         generated_at: now_unix_timestamp(),
-        brew_state: snapshot_brew_state().ok(),
+        brew_state: Some(snapshot_brew_state()?),
         items,
     };
 
-    if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create cache directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let temp_path = cache_path.with_extension("tmp");
-    let file = File::create(&temp_path).map_err(|error| {
-        format!(
-            "Failed to create cache file {}: {error}",
-            temp_path.display()
-        )
-    })?;
-    let writer = BufWriter::new(file);
-    serde_json::to_writer(writer, &catalog)
-        .map_err(|error| format!("Failed to serialize the package catalog: {error}"))?;
-    fs::rename(&temp_path, cache_path).map_err(|error| {
-        format!(
-            "Failed to move cache file into place ({} -> {}): {error}",
-            temp_path.display(),
-            cache_path.display()
-        )
-    })?;
+    write_catalog_cache(cache_path, &catalog)?;
 
     Ok(catalog)
-}
-
-fn read_cache_if_fresh(path: &Path) -> Result<Option<Catalog>, String> {
-    let metadata = match fs::metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read cache metadata {}: {error}",
-                path.display()
-            ))
-        }
-    };
-
-    let modified = metadata.modified().map_err(|error| {
-        format!(
-            "Failed to inspect cache timestamp {}: {error}",
-            path.display()
-        )
-    })?;
-
-    let age = SystemTime::now()
-        .duration_since(modified)
-        .unwrap_or_default();
-
-    if age > CACHE_MAX_AGE {
-        return Ok(None);
-    }
-
-    let Some(catalog) = read_cache_any(path)? else {
-        return Ok(None);
-    };
-
-    if !catalog_matches_current_runtime(&catalog) {
-        return Ok(None);
-    }
-
-    match catalog.brew_state.as_ref() {
-        Some(state) => match brew_state_is_current(state) {
-            Ok(true) => Ok(Some(catalog)),
-            Ok(false) => Ok(None),
-            Err(_) => Ok(Some(catalog)),
-        },
-        None => Ok(None),
-    }
 }
 
 fn read_cache_any(path: &Path) -> Result<Option<Catalog>, String> {
@@ -392,8 +572,32 @@ fn catalog_matches_current_runtime(catalog: &Catalog) -> bool {
         && catalog.host_platform == Some(HostPlatform::current())
 }
 
+fn classify_cached_catalog(
+    catalog: &Catalog,
+    age: Duration,
+    brew_state_current: Option<bool>,
+) -> CatalogFreshness {
+    if !catalog_matches_current_runtime(catalog) || catalog.brew_state.is_none() {
+        return CatalogFreshness::Incompatible;
+    }
+
+    if age <= CACHE_MAX_AGE && matches!(brew_state_current, Some(true)) {
+        CatalogFreshness::Fresh
+    } else {
+        CatalogFreshness::UsableStale
+    }
+}
+
 fn cache_path() -> Result<PathBuf, String> {
     Ok(cache_dir()?.join(CACHE_FILE_NAME))
+}
+
+fn refresh_lock_path() -> Result<PathBuf, String> {
+    Ok(cache_dir()?.join(REFRESH_LOCK_FILE_NAME))
+}
+
+fn refresh_status_path() -> Result<PathBuf, String> {
+    Ok(cache_dir()?.join(REFRESH_STATUS_FILE_NAME))
 }
 
 pub fn cache_dir() -> Result<PathBuf, String> {
@@ -419,6 +623,144 @@ fn now_unix_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn write_catalog_cache(path: &Path, catalog: &Catalog) -> Result<(), String> {
+    write_json_atomically(path, catalog, "cache file")
+}
+
+fn write_refresh_status(status: &RefreshStatus) -> Result<(), String> {
+    write_json_atomically(&refresh_status_path()?, status, "refresh status")
+}
+
+fn write_refresh_lock(lock: &RefreshLock) -> Result<(), String> {
+    write_json_atomically(&refresh_lock_path()?, lock, "refresh lock")
+}
+
+fn write_json_atomically<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create {} directory {}: {error}",
+                label,
+                parent.display()
+            )
+        })?;
+    }
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temp_path = path.with_file_name(format!(
+        "{}.{}.{}.tmp",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        unique
+    ));
+    let file = File::create(&temp_path).map_err(|error| {
+        format!(
+            "Failed to create {} {}: {error}",
+            label,
+            temp_path.display()
+        )
+    })?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer(writer, value)
+        .map_err(|error| format!("Failed to serialize {} {}: {error}", label, path.display()))?;
+    fs::rename(&temp_path, path).map_err(|error| {
+        format!(
+            "Failed to move {} into place ({} -> {}): {error}",
+            label,
+            temp_path.display(),
+            path.display()
+        )
+    })
+}
+
+fn read_refresh_lock() -> Result<Option<RefreshLock>, String> {
+    let path = refresh_lock_path()?;
+    let contents = match fs::read(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read refresh lock {}: {error}",
+                path.display()
+            ))
+        }
+    };
+
+    serde_json::from_slice(&contents)
+        .map(Some)
+        .map_err(|error| format!("Failed to parse refresh lock {}: {error}", path.display()))
+}
+
+fn remove_refresh_lock_if_matches(lock: &RefreshLock) -> Result<(), String> {
+    let path = refresh_lock_path()?;
+    match read_refresh_lock()? {
+        Some(current) if current.started_at == lock.started_at => {
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(format!(
+                        "Failed to remove refresh lock {}: {error}",
+                        path.display()
+                    ))
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn refresh_lock_is_reclaimable(
+    lock: &RefreshLock,
+    now: u64,
+    pid_is_running_fn: impl Fn(u32) -> bool,
+) -> bool {
+    now.saturating_sub(lock.started_at) > REFRESH_LOCK_MAX_AGE.as_secs()
+        || !pid_is_running_fn(lock.pid)
+}
+
+fn pid_is_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(true)
+}
+
+fn patch_catalog_package_state(catalog: &mut Catalog, package: &Package, installed: bool) -> bool {
+    let index = (!package.full_token.is_empty())
+        .then(|| {
+            catalog
+                .items
+                .iter()
+                .position(|item| item.full_token == package.full_token)
+        })
+        .flatten()
+        .or_else(|| {
+            catalog
+                .items
+                .iter()
+                .position(|item| item.token == package.token)
+        });
+
+    let Some(index) = index else {
+        return false;
+    };
+
+    let cached = &mut catalog.items[index];
+    cached.installed = installed;
+    cached.outdated = false;
+    true
 }
 
 fn snapshot_brew_state() -> Result<BrewState, String> {
@@ -835,6 +1177,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
     fn raw_formula(name: &str, requirements: &[&str]) -> RawFormula {
         RawFormula {
@@ -883,6 +1228,65 @@ mod tests {
         }
     }
 
+    fn package(token: &str, full_token: &str) -> Package {
+        Package {
+            kind: PackageKind::Formula,
+            token: token.to_string(),
+            full_token: full_token.to_string(),
+            display_names: Vec::new(),
+            aliases: Vec::new(),
+            old_names: Vec::new(),
+            desc: "test package".to_string(),
+            homepage: None,
+            version: Some("1.0.0".to_string()),
+            tap: None,
+            license: None,
+            dependencies: Vec::new(),
+            installed: false,
+            outdated: true,
+            deprecated: false,
+            disabled: false,
+            auto_updates: false,
+        }
+    }
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = env::temp_dir().join(format!(
+                "brau-catalog-tests-{name}-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("test temp dir should be created");
+            Self { path }
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn write_test_git_repo(path: &Path, hash: &str) {
+        fs::create_dir_all(path.join(".git").join("refs").join("heads"))
+            .expect("git dir should be created");
+        fs::write(path.join(".git").join("HEAD"), "ref: refs/heads/main\n")
+            .expect("HEAD should be written");
+        fs::write(
+            path.join(".git").join("refs").join("heads").join("main"),
+            format!("{hash}\n"),
+        )
+        .expect("ref should be written");
+    }
+
     #[test]
     fn formula_platform_requirements_are_enforced() {
         let macos_only = raw_formula("mas", &["macos"]);
@@ -921,5 +1325,104 @@ mod tests {
         let mut outdated = Catalog::for_test(Vec::new());
         outdated.format_version = 0;
         assert!(!catalog_matches_current_runtime(&outdated));
+    }
+
+    #[test]
+    fn cache_inspection_marks_runtime_mismatch_as_incompatible() {
+        let dir = TestDir::new("incompatible");
+        let cache_path = dir.path.join("catalog.json");
+        let mut catalog = Catalog::for_test(Vec::new());
+        catalog.format_version = 0;
+        write_catalog_cache(&cache_path, &catalog).expect("cache should be written");
+
+        let inspection = inspect_catalog_cache_at_path(&cache_path).expect("cache inspection");
+
+        assert_eq!(inspection.freshness, CatalogFreshness::Incompatible);
+        assert!(inspection.catalog.is_none());
+    }
+
+    #[test]
+    fn cache_inspection_marks_head_drift_as_usable_stale() {
+        let dir = TestDir::new("head-drift");
+        let repo_path = dir.path.join("tap");
+        write_test_git_repo(&repo_path, "1111111");
+
+        let mut catalog = Catalog::for_test(Vec::new());
+        catalog.brew_state = Some(BrewState {
+            taps_root: None,
+            repos: vec![RepoFingerprint {
+                path: repo_path.to_string_lossy().into_owned(),
+                head: read_repo_head_signature(&repo_path).expect("initial head"),
+            }],
+        });
+
+        let cache_path = dir.path.join("catalog.json");
+        write_catalog_cache(&cache_path, &catalog).expect("cache should be written");
+        fs::write(
+            repo_path
+                .join(".git")
+                .join("refs")
+                .join("heads")
+                .join("main"),
+            "2222222\n",
+        )
+        .expect("updated head should be written");
+
+        let inspection = inspect_catalog_cache_at_path(&cache_path).expect("cache inspection");
+
+        assert_eq!(inspection.freshness, CatalogFreshness::UsableStale);
+        assert!(inspection.catalog.is_some());
+    }
+
+    #[test]
+    fn refresh_lock_is_reclaimable_when_pid_is_dead() {
+        let lock = RefreshLock {
+            pid: 4242,
+            started_at: now_unix_timestamp(),
+        };
+
+        assert!(refresh_lock_is_reclaimable(&lock, lock.started_at, |_| {
+            false
+        }));
+        assert!(!refresh_lock_is_reclaimable(&lock, lock.started_at, |_| {
+            true
+        }));
+    }
+
+    #[test]
+    fn refresh_lock_is_reclaimable_when_too_old() {
+        let started_at = now_unix_timestamp().saturating_sub(REFRESH_LOCK_MAX_AGE.as_secs() + 1);
+        let lock = RefreshLock {
+            pid: std::process::id(),
+            started_at,
+        };
+
+        assert!(refresh_lock_is_reclaimable(
+            &lock,
+            now_unix_timestamp(),
+            |_| true
+        ));
+    }
+
+    #[test]
+    fn patch_catalog_package_state_prefers_full_token() {
+        let mut catalog = Catalog::for_test(vec![package("brau", "shamsghi/brau-cli/brau")]);
+        let package = package("brau", "shamsghi/brau-cli/brau");
+
+        assert!(patch_catalog_package_state(&mut catalog, &package, true));
+        assert!(catalog.items[0].installed);
+        assert!(!catalog.items[0].outdated);
+    }
+
+    #[test]
+    fn patch_catalog_package_state_falls_back_to_plain_token() {
+        let mut cached = package("ripgrep", "");
+        cached.installed = true;
+        let mut catalog = Catalog::for_test(vec![cached]);
+        let package = package("ripgrep", "");
+
+        assert!(patch_catalog_package_state(&mut catalog, &package, false));
+        assert!(!catalog.items[0].installed);
+        assert!(!catalog.items[0].outdated);
     }
 }
