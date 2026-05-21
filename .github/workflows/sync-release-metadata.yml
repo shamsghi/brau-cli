@@ -25,6 +25,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    if: github.event_name == 'release' || github.actor == github.repository_owner
 
     steps:
       - name: Check out default branch
@@ -42,6 +43,11 @@ jobs:
           tag="${EVENT_TAG:-$INPUT_TAG}"
           if [[ -z "$tag" ]]; then
             echo "No release tag was provided." >&2
+            exit 1
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.Y.Z, got: $tag" >&2
             exit 1
           fi
 
