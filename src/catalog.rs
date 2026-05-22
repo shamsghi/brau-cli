@@ -17,6 +17,14 @@ const REFRESH_LOCK_FILE_NAME: &str = "catalog-refresh.lock";
 const REFRESH_STATUS_FILE_NAME: &str = "catalog-refresh-status.json";
 const REFRESH_LOCK_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 const REFRESH_WAIT_INTERVAL: Duration = Duration::from_millis(250);
+const BREW_API_METADATA_FILE_NAMES: &[&str] = &[
+    "formula.jws.json",
+    "cask.jws.json",
+    "formula.json",
+    "cask.json",
+    "formula_names.txt",
+    "cask_tokens.txt",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +137,10 @@ pub struct Catalog {
 pub struct BrewState {
     pub taps_root: Option<String>,
     #[serde(default)]
+    pub api_root: Option<String>,
+    #[serde(default)]
+    pub api_files: Vec<FileFingerprint>,
+    #[serde(default)]
     pub repos: Vec<RepoFingerprint>,
 }
 
@@ -136,6 +148,13 @@ pub struct BrewState {
 pub struct RepoFingerprint {
     pub path: String,
     pub head: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileFingerprint {
+    pub path: String,
+    pub modified_at: u64,
+    pub len: u64,
 }
 
 impl Catalog {
@@ -492,6 +511,10 @@ fn inspect_catalog_cache_at_path(path: &Path) -> Result<CacheInspection, String>
             .brew_state
             .as_ref()
             .map(|state| brew_state_is_current(state).unwrap_or(false)),
+        catalog
+            .brew_state
+            .as_ref()
+            .is_some_and(brew_state_has_metadata_fingerprints),
     );
 
     Ok(CacheInspection {
@@ -574,12 +597,15 @@ fn classify_cached_catalog(
     catalog: &Catalog,
     age: Duration,
     brew_state_current: Option<bool>,
+    has_metadata_fingerprints: bool,
 ) -> CatalogFreshness {
     if !catalog_matches_current_runtime(catalog) || catalog.brew_state.is_none() {
         return CatalogFreshness::Incompatible;
     }
 
-    if age <= CACHE_MAX_AGE && matches!(brew_state_current, Some(true)) {
+    if matches!(brew_state_current, Some(true))
+        && (has_metadata_fingerprints || age <= CACHE_MAX_AGE)
+    {
         CatalogFreshness::Fresh
     } else {
         CatalogFreshness::UsableStale
@@ -764,6 +790,7 @@ fn patch_catalog_package_state(catalog: &mut Catalog, package: &Package, install
 fn snapshot_brew_state() -> Result<BrewState, String> {
     let root_repo = brew_repository_root()?;
     let taps_root = root_repo.join("Library").join("Taps");
+    let (api_root, api_files) = snapshot_brew_api_metadata_files();
 
     let mut repos = vec![fingerprint_repo(&root_repo)?];
     for repo in scan_tap_repos(&taps_root)? {
@@ -775,11 +802,19 @@ fn snapshot_brew_state() -> Result<BrewState, String> {
         taps_root: taps_root
             .exists()
             .then(|| taps_root.to_string_lossy().into_owned()),
+        api_root,
+        api_files,
         repos,
     })
 }
 
 fn brew_state_is_current(state: &BrewState) -> Result<bool, String> {
+    if let Some(api_root) = state.api_root.as_deref() {
+        if scan_brew_api_metadata_files(Path::new(api_root)) != state.api_files {
+            return Ok(false);
+        }
+    }
+
     if let Some(taps_root) = state.taps_root.as_deref() {
         let taps_root_path = Path::new(taps_root);
         let mut current_tap_paths = scan_tap_repos(taps_root_path)?
@@ -815,6 +850,10 @@ fn brew_state_is_current(state: &BrewState) -> Result<bool, String> {
     Ok(true)
 }
 
+fn brew_state_has_metadata_fingerprints(state: &BrewState) -> bool {
+    state.api_root.is_some() && !state.api_files.is_empty()
+}
+
 fn brew_repository_root() -> Result<PathBuf, String> {
     let output = Command::new("brew")
         .arg("--repository")
@@ -834,6 +873,67 @@ fn brew_repository_root() -> Result<PathBuf, String> {
     } else {
         Ok(PathBuf::from(path))
     }
+}
+
+fn snapshot_brew_api_metadata_files() -> (Option<String>, Vec<FileFingerprint>) {
+    let Ok(api_root) = brew_api_cache_root() else {
+        return (None, Vec::new());
+    };
+
+    if !api_root.exists() {
+        return (None, Vec::new());
+    }
+
+    let files = scan_brew_api_metadata_files(&api_root);
+    (Some(api_root.to_string_lossy().into_owned()), files)
+}
+
+fn brew_api_cache_root() -> Result<PathBuf, String> {
+    let output = Command::new("brew")
+        .arg("--cache")
+        .output()
+        .map_err(|error| format!("Failed to ask Homebrew for its cache path: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Homebrew failed while reporting its cache path with status {}.",
+            output.status
+        ));
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        Err("Homebrew returned an empty cache path.".to_string())
+    } else {
+        Ok(PathBuf::from(path).join("api"))
+    }
+}
+
+fn scan_brew_api_metadata_files(api_root: &Path) -> Vec<FileFingerprint> {
+    let mut files = BREW_API_METADATA_FILE_NAMES
+        .iter()
+        .filter_map(|file_name| fingerprint_file(&api_root.join(file_name)))
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    files
+}
+
+fn fingerprint_file(path: &Path) -> Option<FileFingerprint> {
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+
+    Some(FileFingerprint {
+        path: path.to_string_lossy().into_owned(),
+        modified_at: metadata
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs(),
+        len: metadata.len(),
+    })
 }
 
 fn scan_tap_repos(taps_root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -1326,6 +1426,32 @@ mod tests {
     }
 
     #[test]
+    fn matching_metadata_fingerprints_keep_old_cache_fresh() {
+        let mut catalog = Catalog::for_test(Vec::new());
+        catalog.brew_state = Some(BrewState {
+            taps_root: None,
+            api_root: Some("/tmp/brau-test-api".to_string()),
+            api_files: vec![FileFingerprint {
+                path: "/tmp/brau-test-api/formula.jws.json".to_string(),
+                modified_at: 1,
+                len: 2,
+            }],
+            repos: Vec::new(),
+        });
+
+        let old_age = CACHE_MAX_AGE + Duration::from_secs(1);
+
+        assert_eq!(
+            classify_cached_catalog(&catalog, old_age, Some(true), true),
+            CatalogFreshness::Fresh
+        );
+        assert_eq!(
+            classify_cached_catalog(&catalog, old_age, Some(true), false),
+            CatalogFreshness::UsableStale
+        );
+    }
+
+    #[test]
     fn cache_inspection_marks_runtime_mismatch_as_incompatible() {
         let dir = TestDir::new("incompatible");
         let cache_path = dir.path.join("catalog.json");
@@ -1348,6 +1474,8 @@ mod tests {
         let mut catalog = Catalog::for_test(Vec::new());
         catalog.brew_state = Some(BrewState {
             taps_root: None,
+            api_root: None,
+            api_files: Vec::new(),
             repos: vec![RepoFingerprint {
                 path: repo_path.to_string_lossy().into_owned(),
                 head: read_repo_head_signature(&repo_path).expect("initial head"),
@@ -1370,6 +1498,53 @@ mod tests {
 
         assert_eq!(inspection.freshness, CatalogFreshness::UsableStale);
         assert!(inspection.catalog.is_some());
+    }
+
+    #[test]
+    fn cache_inspection_marks_matching_brew_state_as_fresh() {
+        let dir = TestDir::new("matching-head");
+        let repo_path = dir.path.join("tap");
+        write_test_git_repo(&repo_path, "1111111");
+
+        let mut catalog = Catalog::for_test(Vec::new());
+        catalog.brew_state = Some(BrewState {
+            taps_root: None,
+            api_root: None,
+            api_files: Vec::new(),
+            repos: vec![RepoFingerprint {
+                path: repo_path.to_string_lossy().into_owned(),
+                head: read_repo_head_signature(&repo_path).expect("initial head"),
+            }],
+        });
+
+        let cache_path = dir.path.join("catalog.json");
+        write_catalog_cache(&cache_path, &catalog).expect("cache should be written");
+
+        let inspection = inspect_catalog_cache_at_path(&cache_path).expect("cache inspection");
+
+        assert_eq!(inspection.freshness, CatalogFreshness::Fresh);
+        assert!(inspection.catalog.is_some());
+    }
+
+    #[test]
+    fn api_metadata_drift_marks_brew_state_stale() {
+        let dir = TestDir::new("api-drift");
+        let api_root = dir.path.join("api");
+        fs::create_dir_all(&api_root).expect("api dir should be created");
+        let formula_api = api_root.join("formula.jws.json");
+        fs::write(&formula_api, "{}").expect("api metadata should be written");
+
+        let state = BrewState {
+            taps_root: None,
+            api_root: Some(api_root.to_string_lossy().into_owned()),
+            api_files: scan_brew_api_metadata_files(&api_root),
+            repos: Vec::new(),
+        };
+        assert!(brew_state_is_current(&state).expect("initial api state"));
+
+        fs::write(&formula_api, "{\"formulae\":[]}").expect("api metadata should be updated");
+
+        assert!(!brew_state_is_current(&state).expect("changed api state"));
     }
 
     #[test]
